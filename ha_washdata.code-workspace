@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "../ha_integration_translator"
+		},
+		{
+			"path": "../ml_washdata"
 		}
 	],
 	"settings": {}
