@@ -5,6 +5,13 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.4.5.9 (fork) - 2026-07-06
+
+### ✨ Features
+- **Optional Native Energy Meter Source**: A new optional **Energy Sensor** config (initial setup and Settings) accepts a cumulative energy entity (`Wh`/`kWh`/`MWh`). When set, `energy_wh` for a finished cycle is computed from the meter's start/end delta instead of integrating the report-on-change power curve, which systematically underestimates spiky loads (measured ~23 % low on a Shelly-metered washing machine). The integrated value remains the fallback (meter unconfigured, unavailable, non-numeric, unsupported unit, or counter reset mid-cycle) and continues to feed ghost-cycle/pump-out detection unchanged. Each stored cycle carries `energy_source` (`meter`/`integration`). The start snapshot is persisted with the active cycle, surviving Home Assistant restarts.
+
+<br>
+
 ## [Unreleased]
 
 ### 🐛 Bug Fixes

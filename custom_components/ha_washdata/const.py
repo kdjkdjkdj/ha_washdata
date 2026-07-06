@@ -4,6 +4,7 @@ DOMAIN = "ha_washdata"
 
 # Configuration keys
 CONF_POWER_SENSOR = "power_sensor"
+CONF_ENERGY_SENSOR = "energy_sensor"  # Optional cumulative energy meter entity
 CONF_NAME = "name"
 CONF_MIN_POWER = "min_power"
 CONF_OFF_DELAY = "off_delay"

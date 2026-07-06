@@ -21,7 +21,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.const import STATE_UNAVAILABLE, STATE_HOME
+from homeassistant.const import STATE_UNAVAILABLE, STATE_HOME, UnitOfEnergy
 from homeassistant.util import dt as dt_util
 import homeassistant.helpers.event as evt
 from homeassistant.helpers import script as script_helper
@@ -73,6 +73,7 @@ from .const import (
     CONF_MIN_OFF_GAP,
     CONF_START_ENERGY_THRESHOLD,
     CONF_END_ENERGY_THRESHOLD,
+    CONF_ENERGY_SENSOR,
     CONF_START_THRESHOLD_W,
     CONF_STOP_THRESHOLD_W,
     CONF_SAMPLING_INTERVAL,
@@ -310,6 +311,9 @@ class WashDataManager:
         self._live_notification_tag = self._lifecycle_tag
         self._start_event_fired = False
         self._cycle_start_time: datetime | None = None
+        # Native energy meter snapshot taken at cycle start (Wh); None = no
+        # snapshot (feature unconfigured, meter unreadable, or no active cycle).
+        self._energy_counter_start_wh: float | None = None
 
         # State
         self._current_power = 0.0
@@ -1252,6 +1256,14 @@ class WashDataManager:
                     self._total_user_paused_seconds = float(
                         active_snapshot_to_restore.get("total_user_paused_seconds", 0.0)
                     )
+                    _meter_raw = active_snapshot_to_restore.get(
+                        "energy_counter_start_wh"
+                    )
+                    self._energy_counter_start_wh = (
+                        float(_meter_raw)
+                        if isinstance(_meter_raw, (int, float))
+                        else None
+                    )
 
                     self._start_watchdog()
                 else:
@@ -1819,6 +1831,7 @@ class WashDataManager:
                 self._user_pause_start.isoformat() if self._user_pause_start else None
             )
             snapshot["total_user_paused_seconds"] = self._total_user_paused_seconds
+            snapshot["energy_counter_start_wh"] = self._energy_counter_start_wh
             await self.profile_store.async_save_active_cycle(snapshot)
 
         self._last_reading_time = None
@@ -2135,6 +2148,7 @@ class WashDataManager:
                 self._user_pause_start.isoformat() if self._user_pause_start else None
             )
             snapshot["total_user_paused_seconds"] = self._total_user_paused_seconds
+            snapshot["energy_counter_start_wh"] = self._energy_counter_start_wh
 
             self.hass.async_create_task(
                 self.profile_store.async_save_active_cycle(snapshot)
@@ -2607,6 +2621,7 @@ class WashDataManager:
                 self._notified_start = False # Reset start notification state
                 self._start_event_fired = False
                 self._cycle_start_time = self.detector.current_cycle_start or dt_util.now()
+                self._energy_counter_start_wh = self._read_energy_counter_wh()
                 self._reset_live_notification_state()
 
                 # Reset pause tracking and clean state for new cycle
@@ -2675,6 +2690,11 @@ class WashDataManager:
         duration = cycle_data["duration"]
         max_power = cycle_data.get("max_power", 0)
 
+        # Consume the meter start snapshot up front so every exit path
+        # (including ghost/noise cycles) clears it for the next cycle.
+        meter_start_wh = self._energy_counter_start_wh
+        self._energy_counter_start_wh = None
+
         # IMMEDIATELY stop all active timers when cycle determined to have ended
         self._stop_watchdog()  # Stop active cycle watchdog
         self._stop_state_expiry_timer()  # Cancel any pending progress reset
@@ -2731,8 +2751,15 @@ class WashDataManager:
                     self._handle_noise_cycle(max_power)
                     return  # Do not store this as a real cycle
 
-        # Store energy for notification and persistence (calculated above for ghost detection)
+        # Store energy for notification and persistence. The integrated value
+        # (calculated above) also feeds the ghost checks; when a native energy
+        # meter is configured and plausible, its delta wins for the stored value.
         cycle_data["energy_wh"] = round(cycle_energy_wh, 3)
+        cycle_data["energy_source"] = "integration"
+        meter_wh = self._compute_meter_energy_wh(meter_start_wh)
+        if meter_wh is not None:
+            cycle_data["energy_wh"] = round(meter_wh, 3)
+            cycle_data["energy_source"] = "meter"
 
         # Schedule heavy post-processing asynchronously
         self.hass.async_create_task(self._async_process_cycle_end(cycle_data))
@@ -4254,6 +4281,70 @@ class WashDataManager:
     def cycle_start_time(self) -> datetime | None:
         """Return the start time of the current cycle."""
         return self.detector.current_cycle_start
+
+    # Map of supported cumulative-energy units to their Wh factor.
+    _ENERGY_UNIT_TO_WH = {
+        UnitOfEnergy.WATT_HOUR: 1.0,
+        UnitOfEnergy.KILO_WATT_HOUR: 1000.0,
+        UnitOfEnergy.MEGA_WATT_HOUR: 1_000_000.0,
+    }
+
+    @property
+    def energy_sensor_entity_id(self) -> str | None:
+        """Return the configured cumulative energy meter entity, if any."""
+        return self.config_entry.options.get(
+            CONF_ENERGY_SENSOR, self.config_entry.data.get(CONF_ENERGY_SENSOR)
+        )
+
+    def _read_energy_counter_wh(self) -> float | None:
+        """Read the configured energy meter, normalized to Wh.
+
+        Returns None whenever the value cannot be trusted (unconfigured,
+        unavailable, non-numeric, or unsupported/missing unit) so callers
+        fall back to the integrated power curve.
+        """
+        entity_id = self.energy_sensor_entity_id
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            self._logger.debug("Energy sensor %s is unavailable", entity_id)
+            return None
+        unit = state.attributes.get("unit_of_measurement")
+        factor = self._ENERGY_UNIT_TO_WH.get(unit)
+        if factor is None:
+            self._logger.debug(
+                "Energy sensor %s has unsupported unit %r", entity_id, unit
+            )
+            return None
+        try:
+            return float(state.state) * factor
+        except (TypeError, ValueError):
+            self._logger.debug(
+                "Energy sensor %s has non-numeric state %r", entity_id, state.state
+            )
+            return None
+
+    def _compute_meter_energy_wh(self, start_wh: float | None) -> float | None:
+        """Return cycle energy from the native meter delta, or None to fall back."""
+        if start_wh is None:
+            return None
+        end_wh = self._read_energy_counter_wh()
+        if end_wh is None:
+            self._logger.debug(
+                "Energy meter unreadable at cycle end; using integrated energy"
+            )
+            return None
+        delta_wh = end_wh - start_wh
+        if delta_wh < 0:
+            self._logger.info(
+                "Energy meter went backwards during cycle (%.3f -> %.3f Wh); "
+                "meter reset assumed, using integrated energy",
+                start_wh,
+                end_wh,
+            )
+            return None
+        return delta_wh
 
     @property
     def last_match_details(self) -> dict[str, Any] | None:
