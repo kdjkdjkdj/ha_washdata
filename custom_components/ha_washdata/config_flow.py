@@ -25,6 +25,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     DOMAIN,
     CONF_POWER_SENSOR,
+    CONF_ENERGY_SENSOR,
     CONF_MIN_POWER,
     CONF_OFF_DELAY,
     CONF_START_THRESHOLD_W,
@@ -221,6 +222,9 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         ),
         vol.Required(CONF_POWER_SENSOR): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor"),
+        ),
+        vol.Optional(CONF_ENERGY_SENSOR): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor", device_class="energy"),
         ),
         vol.Optional(CONF_MIN_POWER, default=DEFAULT_MIN_POWER): vol.Coerce(float),
     }
@@ -493,6 +497,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             self._basic_options = {}
 
         if user_input is not None:
+            # A cleared EntitySelector omits its key entirely; normalize to None
+            # so the merge below cannot resurrect the previously stored value.
+            user_input[CONF_ENERGY_SENSOR] = user_input.get(CONF_ENERGY_SENSOR) or None
             # Check if user wants to edit advanced settings
             if user_input.get(CONF_SHOW_ADVANCED):
                 # Store basic input to merge later
@@ -561,6 +568,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 CONF_POWER_SENSOR,
                 default=current_sensor,
             ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(
+                CONF_ENERGY_SENSOR,
+                description={"suggested_value": get_val(CONF_ENERGY_SENSOR, None)},
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="energy")
+            ),
             # --- Power Thresholds ---
             vol.Optional(
                 CONF_MIN_POWER,
