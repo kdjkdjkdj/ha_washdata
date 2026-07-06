@@ -210,18 +210,18 @@ def test_anti_wrinkle_exit_via_user_stop(
     mock_callbacks["on_state_change"].assert_called_with(STATE_ANTI_WRINKLE, STATE_OFF)
 
 
-def test_anti_wrinkle_not_for_washing_machine(mock_callbacks: dict[str, Mock]) -> None:
-    """Test that anti-wrinkle is NOT enabled for washing machines."""
+def test_anti_wrinkle_enabled_washing_machine(mock_callbacks: dict[str, Mock]) -> None:
+    """Anti-wrinkle transition works for washing machines when enabled."""
     config = CycleDetectorConfig(
         min_power=5.0,
         off_delay=60,
         device_type=DEVICE_TYPE_WASHING_MACHINE,
-        anti_wrinkle_enabled=True,  # Even if enabled in config
+        anti_wrinkle_enabled=True,
         anti_wrinkle_max_power=400.0,
         anti_wrinkle_max_duration=60.0,
         anti_wrinkle_exit_power=0.8,
     )
-    
+
     detector = CycleDetector(
         config=config,
         on_state_change=mock_callbacks["on_state_change"],
@@ -233,12 +233,46 @@ def test_anti_wrinkle_not_for_washing_machine(mock_callbacks: dict[str, Mock]) -
     detector.process_reading(500.0, dt(10))
     for t in range(10, 1500, 10):
         detector.process_reading(500.0, dt(t))
-    
+
     detector.process_reading(1.0, dt(1501))
     detector.process_reading(1.0, dt(1540))
     flush_buffer(detector, 1540, num_readings=65)
-    
-    # Should transition to FINISHED (not ANTI_WRINKLE) for washing machines
+
+    # Should transition to ANTI_WRINKLE (not FINISHED) for washing machines when enabled
+    assert detector.state == STATE_ANTI_WRINKLE
+    mock_callbacks["on_cycle_end"].assert_called_once()
+    cycle_data = mock_callbacks["on_cycle_end"].call_args[0][0]
+    assert cycle_data["status"] == "completed"
+
+
+def test_anti_wrinkle_disabled_washing_machine_finishes(
+    mock_callbacks: dict[str, Mock],
+) -> None:
+    """Without the opt-in flag, washing machines still finish normally (no anti-wrinkle)."""
+    config = CycleDetectorConfig(
+        min_power=5.0,
+        off_delay=60,
+        device_type=DEVICE_TYPE_WASHING_MACHINE,
+        anti_wrinkle_enabled=False,
+    )
+
+    detector = CycleDetector(
+        config=config,
+        on_state_change=mock_callbacks["on_state_change"],
+        on_cycle_end=mock_callbacks["on_cycle_end"],
+    )
+
+    # Complete a cycle
+    detector.process_reading(500.0, dt(0))
+    detector.process_reading(500.0, dt(10))
+    for t in range(10, 1500, 10):
+        detector.process_reading(500.0, dt(t))
+
+    detector.process_reading(1.0, dt(1501))
+    detector.process_reading(1.0, dt(1540))
+    flush_buffer(detector, 1540, num_readings=65)
+
+    # Opt-in flag off -> normal finish, no anti-wrinkle
     assert detector.state == STATE_FINISHED
 
 

@@ -625,7 +625,8 @@ class CycleDetector:
 
         anti_wrinkle_active = (
             self._config.anti_wrinkle_enabled
-            and self._config.device_type in (DEVICE_TYPE_DRYER, DEVICE_TYPE_WASHER_DRYER)
+            and self._config.device_type
+            in (DEVICE_TYPE_DRYER, DEVICE_TYPE_WASHER_DRYER, DEVICE_TYPE_WASHING_MACHINE)
         )
 
         # 3. State Machine
@@ -1441,7 +1442,8 @@ class CycleDetector:
             status == "completed"
             and termination_reason in {"timeout", "smart"}
             and self._config.anti_wrinkle_enabled
-            and self._config.device_type in (DEVICE_TYPE_DRYER, DEVICE_TYPE_WASHER_DRYER)
+            and self._config.device_type
+            in (DEVICE_TYPE_DRYER, DEVICE_TYPE_WASHER_DRYER, DEVICE_TYPE_WASHING_MACHINE)
         ):
             target = STATE_ANTI_WRINKLE
 
