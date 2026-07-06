@@ -90,3 +90,77 @@ async def test_read_energy_counter_not_configured_returns_none(
     mgr = _build_manager(hass, mock_entry)
     assert mgr.energy_sensor_entity_id is None
     assert mgr._read_energy_counter_wh() is None
+
+
+def _cycle_data() -> dict[str, Any]:
+    # 100 W flat for 1 h -> integrated energy exactly 100.0 Wh
+    return {
+        "id": "cycle-1",
+        "start_time": "2026-01-01T10:00:00+00:00",
+        "duration": 5460,
+        "max_power": 2000,
+        "status": "completed",
+        "power_data": [[0.0, 100.0], [3600.0, 100.0]],
+    }
+
+
+async def test_cycle_end_uses_meter_delta(
+    hass: HomeAssistant, manager: WashDataManager
+) -> None:
+    manager._async_process_cycle_end = AsyncMock()
+    manager._energy_counter_start_wh = 353087.0
+    hass.states.async_set(ENERGY_SENSOR, "353.527", {"unit_of_measurement": "kWh"})
+    cycle_data = _cycle_data()
+
+    manager._on_cycle_end(cycle_data)
+    await hass.async_block_till_done()
+
+    assert cycle_data["energy_wh"] == pytest.approx(440.0)
+    assert cycle_data["energy_source"] == "meter"
+    assert manager._energy_counter_start_wh is None
+
+
+async def test_cycle_end_meter_reset_falls_back_to_integration(
+    hass: HomeAssistant, manager: WashDataManager
+) -> None:
+    manager._async_process_cycle_end = AsyncMock()
+    manager._energy_counter_start_wh = 500.0
+    # 0.1 kWh = 100 Wh < 500 Wh start -> negative delta -> meter reset assumed
+    hass.states.async_set(ENERGY_SENSOR, "0.1", {"unit_of_measurement": "kWh"})
+    cycle_data = _cycle_data()
+
+    manager._on_cycle_end(cycle_data)
+    await hass.async_block_till_done()
+
+    assert cycle_data["energy_wh"] == pytest.approx(100.0)
+    assert cycle_data["energy_source"] == "integration"
+
+
+async def test_cycle_end_meter_unavailable_falls_back_to_integration(
+    hass: HomeAssistant, manager: WashDataManager
+) -> None:
+    manager._async_process_cycle_end = AsyncMock()
+    manager._energy_counter_start_wh = 500.0
+    hass.states.async_set(ENERGY_SENSOR, "unavailable", {"unit_of_measurement": "kWh"})
+    cycle_data = _cycle_data()
+
+    manager._on_cycle_end(cycle_data)
+    await hass.async_block_till_done()
+
+    assert cycle_data["energy_wh"] == pytest.approx(100.0)
+    assert cycle_data["energy_source"] == "integration"
+
+
+async def test_cycle_end_without_start_snapshot_keeps_integration(
+    hass: HomeAssistant, manager: WashDataManager
+) -> None:
+    manager._async_process_cycle_end = AsyncMock()
+    manager._energy_counter_start_wh = None
+    hass.states.async_set(ENERGY_SENSOR, "353.527", {"unit_of_measurement": "kWh"})
+    cycle_data = _cycle_data()
+
+    manager._on_cycle_end(cycle_data)
+    await hass.async_block_till_done()
+
+    assert cycle_data["energy_wh"] == pytest.approx(100.0)
+    assert cycle_data["energy_source"] == "integration"

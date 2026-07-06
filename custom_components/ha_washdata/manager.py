@@ -2679,6 +2679,11 @@ class WashDataManager:
         duration = cycle_data["duration"]
         max_power = cycle_data.get("max_power", 0)
 
+        # Consume the meter start snapshot up front so every exit path
+        # (including ghost/noise cycles) clears it for the next cycle.
+        meter_start_wh = self._energy_counter_start_wh
+        self._energy_counter_start_wh = None
+
         # IMMEDIATELY stop all active timers when cycle determined to have ended
         self._stop_watchdog()  # Stop active cycle watchdog
         self._stop_state_expiry_timer()  # Cancel any pending progress reset
@@ -2735,8 +2740,15 @@ class WashDataManager:
                     self._handle_noise_cycle(max_power)
                     return  # Do not store this as a real cycle
 
-        # Store energy for notification and persistence (calculated above for ghost detection)
+        # Store energy for notification and persistence. The integrated value
+        # (calculated above) also feeds the ghost checks; when a native energy
+        # meter is configured and plausible, its delta wins for the stored value.
         cycle_data["energy_wh"] = round(cycle_energy_wh, 3)
+        cycle_data["energy_source"] = "integration"
+        meter_wh = self._compute_meter_energy_wh(meter_start_wh)
+        if meter_wh is not None:
+            cycle_data["energy_wh"] = round(meter_wh, 3)
+            cycle_data["energy_source"] = "meter"
 
         # Schedule heavy post-processing asynchronously
         self.hass.async_create_task(self._async_process_cycle_end(cycle_data))
@@ -4301,6 +4313,27 @@ class WashDataManager:
                 "Energy sensor %s has non-numeric state %r", entity_id, state.state
             )
             return None
+
+    def _compute_meter_energy_wh(self, start_wh: float | None) -> float | None:
+        """Return cycle energy from the native meter delta, or None to fall back."""
+        if start_wh is None:
+            return None
+        end_wh = self._read_energy_counter_wh()
+        if end_wh is None:
+            self._logger.debug(
+                "Energy meter unreadable at cycle end; using integrated energy"
+            )
+            return None
+        delta_wh = end_wh - start_wh
+        if delta_wh < 0:
+            self._logger.info(
+                "Energy meter went backwards during cycle (%.3f -> %.3f Wh); "
+                "meter reset assumed, using integrated energy",
+                start_wh,
+                end_wh,
+            )
+            return None
+        return delta_wh
 
     @property
     def last_match_details(self) -> dict[str, Any] | None:
