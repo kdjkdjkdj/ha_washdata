@@ -87,6 +87,20 @@ If you are using Zigbee2MQTT with smart plugs, ensure your device reporting is r
 - **Power Threshold**: Decrease the minimum updating threshold (e.g., from 5W to 1W or 2W) to ensure small power changes are captured promptly.
 - *Note*: These changes may slightly increase Zigbee network traffic.
 
+### Energy Sensor (optional)
+
+If your smart plug also exposes a cumulative energy counter (`Wh`/`kWh`, e.g.
+Shelly `..._energy` or Tasmota `..._total`), you can select it as the optional
+**Energy Sensor**. WashData then computes each cycle's energy from the meter's
+start/end delta instead of integrating the power curve. Plugs report power
+on-change, so integration systematically misses peaks between reports —
+real-world deviations of ~20 % are common; the on-device meter does not have
+this problem. The integrated value remains the automatic fallback whenever the
+meter is unavailable or resets mid-cycle, and each stored cycle records its
+source in `energy_source` (`meter` or `integration`). Note: cycles from the
+manual recorder and cycles trimmed afterwards keep trace-based energy, because
+trimming changes the time window the meter delta was captured for.
+
 ### 2. The Golden Rule: "Teach" the Integration
 WashData **does not** come with pre-built profiles because every machine model is different. You must teach it what your cycles look like.
 #### Option A: Manual "Record Mode" (Recommended)
