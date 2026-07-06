@@ -5,6 +5,13 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.4.5.10 (fork) - 2026-07-06
+
+### ✨ Features
+- **Anti-Wrinkle Shield for Washing Machines**: The anti-wrinkle handling previously limited to dryers and washer-dryer combos now also applies to `washing_machine` devices when enabled. Modern washers rotate the drum periodically after a program ends (anti-crease), which otherwise keeps resetting end-detection so the finish notification only arrives once the door is opened. With the shield enabled, the completed cycle enters the *Anti-Wrinkle* state and the finish notification fires at program end. Opt-in and unchanged for existing setups (default off); no default threshold changes.
+
+<br>
+
 ## 0.4.5.9 (fork) - 2026-07-06
 
 ### ✨ Features
