@@ -21,7 +21,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.const import STATE_UNAVAILABLE, STATE_HOME
+from homeassistant.const import STATE_UNAVAILABLE, STATE_HOME, UnitOfEnergy
 from homeassistant.util import dt as dt_util
 import homeassistant.helpers.event as evt
 from homeassistant.helpers import script as script_helper
@@ -73,6 +73,7 @@ from .const import (
     CONF_MIN_OFF_GAP,
     CONF_START_ENERGY_THRESHOLD,
     CONF_END_ENERGY_THRESHOLD,
+    CONF_ENERGY_SENSOR,
     CONF_START_THRESHOLD_W,
     CONF_STOP_THRESHOLD_W,
     CONF_SAMPLING_INTERVAL,
@@ -310,6 +311,9 @@ class WashDataManager:
         self._live_notification_tag = self._lifecycle_tag
         self._start_event_fired = False
         self._cycle_start_time: datetime | None = None
+        # Native energy meter snapshot taken at cycle start (Wh); None = no
+        # snapshot (feature unconfigured, meter unreadable, or no active cycle).
+        self._energy_counter_start_wh: float | None = None
 
         # State
         self._current_power = 0.0
@@ -4254,6 +4258,49 @@ class WashDataManager:
     def cycle_start_time(self) -> datetime | None:
         """Return the start time of the current cycle."""
         return self.detector.current_cycle_start
+
+    # Map of supported cumulative-energy units to their Wh factor.
+    _ENERGY_UNIT_TO_WH = {
+        UnitOfEnergy.WATT_HOUR: 1.0,
+        UnitOfEnergy.KILO_WATT_HOUR: 1000.0,
+        UnitOfEnergy.MEGA_WATT_HOUR: 1_000_000.0,
+    }
+
+    @property
+    def energy_sensor_entity_id(self) -> str | None:
+        """Return the configured cumulative energy meter entity, if any."""
+        return self.config_entry.options.get(
+            CONF_ENERGY_SENSOR, self.config_entry.data.get(CONF_ENERGY_SENSOR)
+        )
+
+    def _read_energy_counter_wh(self) -> float | None:
+        """Read the configured energy meter, normalized to Wh.
+
+        Returns None whenever the value cannot be trusted (unconfigured,
+        unavailable, non-numeric, or unsupported/missing unit) so callers
+        fall back to the integrated power curve.
+        """
+        entity_id = self.energy_sensor_entity_id
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            self._logger.debug("Energy sensor %s is unavailable", entity_id)
+            return None
+        unit = state.attributes.get("unit_of_measurement")
+        factor = self._ENERGY_UNIT_TO_WH.get(unit)
+        if factor is None:
+            self._logger.debug(
+                "Energy sensor %s has unsupported unit %r", entity_id, unit
+            )
+            return None
+        try:
+            return float(state.state) * factor
+        except (TypeError, ValueError):
+            self._logger.debug(
+                "Energy sensor %s has non-numeric state %r", entity_id, state.state
+            )
+            return None
 
     @property
     def last_match_details(self) -> dict[str, Any] | None:
