@@ -1256,6 +1256,14 @@ class WashDataManager:
                     self._total_user_paused_seconds = float(
                         active_snapshot_to_restore.get("total_user_paused_seconds", 0.0)
                     )
+                    _meter_raw = active_snapshot_to_restore.get(
+                        "energy_counter_start_wh"
+                    )
+                    self._energy_counter_start_wh = (
+                        float(_meter_raw)
+                        if isinstance(_meter_raw, (int, float))
+                        else None
+                    )
 
                     self._start_watchdog()
                 else:
@@ -1823,6 +1831,7 @@ class WashDataManager:
                 self._user_pause_start.isoformat() if self._user_pause_start else None
             )
             snapshot["total_user_paused_seconds"] = self._total_user_paused_seconds
+            snapshot["energy_counter_start_wh"] = self._energy_counter_start_wh
             await self.profile_store.async_save_active_cycle(snapshot)
 
         self._last_reading_time = None
@@ -2139,6 +2148,7 @@ class WashDataManager:
                 self._user_pause_start.isoformat() if self._user_pause_start else None
             )
             snapshot["total_user_paused_seconds"] = self._total_user_paused_seconds
+            snapshot["energy_counter_start_wh"] = self._energy_counter_start_wh
 
             self.hass.async_create_task(
                 self.profile_store.async_save_active_cycle(snapshot)
@@ -2611,6 +2621,7 @@ class WashDataManager:
                 self._notified_start = False # Reset start notification state
                 self._start_event_fired = False
                 self._cycle_start_time = self.detector.current_cycle_start or dt_util.now()
+                self._energy_counter_start_wh = self._read_energy_counter_wh()
                 self._reset_live_notification_state()
 
                 # Reset pause tracking and clean state for new cycle

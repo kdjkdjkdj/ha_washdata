@@ -6,8 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
-from custom_components.ha_washdata.const import CONF_ENERGY_SENSOR
+from custom_components.ha_washdata.const import CONF_ENERGY_SENSOR, STATE_RUNNING
 from custom_components.ha_washdata.manager import WashDataManager
 
 ENERGY_SENSOR = "sensor.test_energy"
@@ -164,3 +165,55 @@ async def test_cycle_end_without_start_snapshot_keeps_integration(
 
     assert cycle_data["energy_wh"] == pytest.approx(100.0)
     assert cycle_data["energy_source"] == "integration"
+
+
+async def test_check_state_save_includes_meter_snapshot(
+    hass: HomeAssistant, manager: WashDataManager
+) -> None:
+    manager.detector.get_state_snapshot = MagicMock(return_value={})
+    manager.profile_store.async_save_active_cycle = AsyncMock()
+    manager._energy_counter_start_wh = 1234.5
+    manager._last_state_save = None
+
+    manager._check_state_save(dt_util.now())
+    await hass.async_block_till_done()
+
+    snapshot = manager.profile_store.async_save_active_cycle.call_args[0][0]
+    assert snapshot["energy_counter_start_wh"] == 1234.5
+
+
+async def test_restoration_restores_meter_snapshot(
+    hass: HomeAssistant, manager: WashDataManager
+) -> None:
+    snapshot = {
+        "state": STATE_RUNNING,
+        "notified_start": True,
+        "energy_counter_start_wh": 4321.0,
+    }
+    manager.profile_store.get_active_cycle = MagicMock(return_value=snapshot)
+    manager.profile_store.get_last_active_save = MagicMock(return_value=dt_util.now())
+    manager.profile_store.get_profiles = MagicMock(return_value={})
+    manager.detector.restore_state_snapshot = MagicMock()
+    manager.detector.state = STATE_RUNNING
+    manager._start_watchdog = MagicMock()
+
+    await manager._attempt_state_restoration()
+
+    assert manager._energy_counter_start_wh == pytest.approx(4321.0)
+    assert manager._notified_start is True
+
+
+async def test_restoration_without_meter_key_leaves_none(
+    hass: HomeAssistant, manager: WashDataManager
+) -> None:
+    snapshot = {"state": STATE_RUNNING, "notified_start": False}
+    manager.profile_store.get_active_cycle = MagicMock(return_value=snapshot)
+    manager.profile_store.get_last_active_save = MagicMock(return_value=dt_util.now())
+    manager.profile_store.get_profiles = MagicMock(return_value={})
+    manager.detector.restore_state_snapshot = MagicMock()
+    manager.detector.state = STATE_RUNNING
+    manager._start_watchdog = MagicMock()
+
+    await manager._attempt_state_restoration()
+
+    assert manager._energy_counter_start_wh is None
