@@ -8,7 +8,11 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from custom_components.ha_washdata.const import CONF_ENERGY_SENSOR, STATE_RUNNING
+from custom_components.ha_washdata.const import (
+    CONF_ENERGY_SENSOR,
+    STATE_OFF,
+    STATE_RUNNING,
+)
 from custom_components.ha_washdata.manager import WashDataManager
 
 ENERGY_SENSOR = "sensor.test_energy"
@@ -91,6 +95,56 @@ async def test_read_energy_counter_not_configured_returns_none(
     mgr = _build_manager(hass, mock_entry)
     assert mgr.energy_sensor_entity_id is None
     assert mgr._read_energy_counter_wh() is None
+
+
+async def test_new_cycle_start_snapshots_energy_counter(
+    hass: HomeAssistant, manager: WashDataManager
+) -> None:
+    """Entering RUNNING from OFF must snapshot the configured energy meter."""
+    hass.states.async_set(ENERGY_SENSOR, "353.527", {"unit_of_measurement": "kWh"})
+    manager.detector.current_cycle_start = dt_util.now()
+    manager._start_watchdog = MagicMock()
+    manager._notify_fire_events = False
+    manager._notify_update = MagicMock()
+
+    manager._on_state_change(STATE_OFF, STATE_RUNNING)
+
+    assert manager._energy_counter_start_wh == pytest.approx(353527.0)
+    assert manager._energy_snapshot_entity_id == ENERGY_SENSOR
+
+
+async def test_state_off_clears_energy_snapshot(
+    hass: HomeAssistant, manager: WashDataManager
+) -> None:
+    """Transitioning back to OFF must drop any leftover meter snapshot."""
+    manager._energy_counter_start_wh = 123.0
+    manager._energy_snapshot_entity_id = ENERGY_SENSOR
+    manager._notify_update = MagicMock()
+
+    manager._on_state_change(STATE_RUNNING, STATE_OFF)
+
+    assert manager._energy_counter_start_wh is None
+    assert manager._energy_snapshot_entity_id is None
+
+
+async def test_cycle_end_meter_swap_falls_back_to_integration(
+    hass: HomeAssistant, manager: WashDataManager, mock_entry: Any
+) -> None:
+    """If the configured meter changes mid-cycle, don't compute a cross-meter delta."""
+    manager._async_process_cycle_end = AsyncMock()
+    manager._energy_counter_start_wh = 500.0
+    manager._energy_snapshot_entity_id = ENERGY_SENSOR
+
+    other_sensor = "sensor.other_energy"
+    mock_entry.options = {**mock_entry.options, CONF_ENERGY_SENSOR: other_sensor}
+    hass.states.async_set(other_sensor, "353.527", {"unit_of_measurement": "kWh"})
+
+    cycle_data = _cycle_data()
+    manager._on_cycle_end(cycle_data)
+    await hass.async_block_till_done()
+
+    assert cycle_data["energy_wh"] == pytest.approx(100.0)
+    assert cycle_data["energy_source"] == "integration"
 
 
 def _cycle_data() -> dict[str, Any]:
