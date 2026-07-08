@@ -273,152 +273,191 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ---
 
-### Task 3: unmatched_off_delay in the timeout gate
+### Task 3: profile-independent graceful end (dryer), bypassing the energy gate
+
+**Context (why this replaces a simple off_delay tweak):** The classifier from Task 2 stops anti-crease blips from resetting `_time_below_threshold`, but a SECOND barrier remains — the ENDING fallback energy gate (~Z.1160-1177) integrates **raw power** over a trailing `gate_window` (= `off_delay`). A 170 W blip every few minutes keeps that window's energy above `end_energy_threshold`, so completion stays blocked → watchdog `force_stop` in production. Confirmed by the Task 2 reviewer. Fix: add an explicit graceful-finish path that keys on **time since the last REAL activity** — which `_last_active_time` already tracks correctly, because Task 2's guarded reset does NOT update `_last_active_time` for blips. This bypasses the raw-power energy gate. Scoped to `dryer`/`washer_dryer` here (Task 4 extends to WM).
 
 **Files:**
-- Modify: `custom_components/ha_washdata/cycle_detector.py:1114-1135` (fallback timeout gate)
+- Modify: `custom_components/ha_washdata/cycle_detector.py` (ENDING fallback section, ~Z.1114, before the `effective_off_delay`/energy-gate logic)
 - Test: `tests/test_blip_tolerant_end.py`
 
 **Interfaces:**
-- Consumes: `unmatched_off_delay`, `anti_wrinkle_enabled` (Task 1); `_is_anti_crease_blip` (Task 2).
+- Consumes: `unmatched_off_delay`, `anti_wrinkle_enabled`, `crease_resume_threshold` (Task 1); the `_last_active_time` semantics established by Task 2 (only real, non-blip activity advances it). `DEVICE_TYPE_DRYER`/`DEVICE_TYPE_WASHER_DRYER` are already imported in this module.
+- Produces: an early graceful-finish branch in ENDING; Task 4 will widen its device gate to include `DEVICE_TYPE_WASHING_MACHINE`.
 
 - [ ] **Step 1: Write the failing test**
 
-Add a test asserting the dryer finishes within ~`unmatched_off_delay` (900 s) of the last real activity, not the large `off_delay` (1800 s). Reuse `_dryer_cfg()`; after the crease tail, once blips stop, the cycle must finish quickly:
+This uses REALISTIC config (default `end_energy_threshold`, i.e. NOT the 1000.0 isolation value from Task 2) with the periodic-blip crease tail, and asserts the dryer reaches `STATE_ANTI_WRINKLE` — proving the energy-gate bypass. Add to `tests/test_blip_tolerant_end.py`:
 
 ```python
-def test_dryer_unmatched_off_delay_used():
-    det = CycleDetector(config=_dryer_cfg(), on_state_change=lambda *a: None, on_cycle_end=lambda *a: None)
+def _dryer_cfg_realistic() -> CycleDetectorConfig:
+    return CycleDetectorConfig(
+        min_power=5.0, off_delay=1800, device_type=DEVICE_TYPE_DRYER,
+        anti_wrinkle_enabled=True, crease_resume_threshold=1000.0,
+        unmatched_off_delay=900, stop_threshold_w=2.0, start_threshold_w=5.0,
+    )  # note: default end_energy_threshold (0.05) — the energy gate is in play
+
+def test_dryer_finishes_despite_energy_gate():
+    det = CycleDetector(config=_dryer_cfg_realistic(), on_state_change=lambda *a: None, on_cycle_end=lambda *a: None)
     det.process_reading(2000.0, dt(0))
     for t in range(10, 2400, 10):
-        det.process_reading(2000.0, dt(t))
-    # Pure quiet (no blips) after last activity at t=2390
-    t = 2400
-    while t < 2400 + 1000 and det.state == STATE_ENDING:
-        det.process_reading(1.0, dt(t)); t += 10
-    # Finished within unmatched_off_delay (900s), i.e. well before 2390+1800
-    assert det.state in (STATE_ANTI_WRINKLE, STATE_FINISHED)
-    assert t < 2390 + 1700
+        det.process_reading(2000.0, dt(t))            # ~40 min real drying, unmatched
+    for t in range(2400, 2600, 10):
+        det.process_reading(1.0, dt(t))               # power drops -> ENDING
+    # Crease tail: 170 W blip every ~3 min for a long time; last REAL activity was t~2390
+    t = 2600
+    while t < 6000 and det.state == STATE_ENDING:
+        det.process_reading(170.0, dt(t)); t += 6
+        for _ in range(28):
+            det.process_reading(1.0, dt(t)); t += 6
+    assert det.state == STATE_ANTI_WRINKLE
+    # finished within ~unmatched_off_delay of the last blip's real-activity reset semantics
 ```
+
+Note: because a 170 W blip DOES advance `_last_active_time` only if it is NOT classified as a blip, verify the classifier treats the 170 W (< crease_resume_threshold 1000) reading as a blip so `_last_active_time` stays at the pre-tail value. If the blips are correctly classified, `since_real` grows monotonically and the finish fires ~`unmatched_off_delay` after drying stopped.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `.venv/Scripts/python -m pytest tests/test_blip_tolerant_end.py::test_dryer_unmatched_off_delay_used -v`
-Expected: FAIL — still waits the full `off_delay` (1800 s), so the assertion `t < 2390+1700` trips or state still ENDING.
+Run: `.venv/Scripts/python -m pytest tests/test_blip_tolerant_end.py::test_dryer_finishes_despite_energy_gate -v`
+Expected: FAIL — cycle stays `STATE_ENDING` (energy gate keeps it open; no early-finish path yet).
 
-- [ ] **Step 3: Apply unmatched_off_delay in the gate**
+- [ ] **Step 3: Add the early graceful-finish branch**
 
-In `cycle_detector.py`, in the ENDING fallback-timeout block, compute `effective_off_delay` with the unmatched override. Replace the existing `effective_off_delay = max(self._config.off_delay, self._config.min_off_gap)` (~Z.1116) with:
+In `cycle_detector.py`, in the ENDING handler's `else` branch (the non-`is_high` path that runs the fallback-timeout logic), BEFORE the existing `effective_off_delay`/energy-gate code (~Z.1114), insert:
 
 ```python
+                # --- PROFILE-INDEPENDENT GRACEFUL END (unmatched anti-wrinkle) ---
+                # No matched profile => no smart-termination; and the crease-guard
+                # blips keep the raw-power energy gate shut. Finish on time since
+                # the last *real* activity (blips excluded via _last_active_time,
+                # see _is_anti_crease_blip). termination_reason "timeout" routes to
+                # STATE_ANTI_WRINKLE. Dryer/washer_dryer only here; Task 4 adds WM.
                 if (
                     self._expected_duration <= 0
                     and self._config.anti_wrinkle_enabled
+                    and self._config.device_type
+                    in (DEVICE_TYPE_DRYER, DEVICE_TYPE_WASHER_DRYER)
                     and self._cycle_max_power >= self._config.crease_resume_threshold
+                    and self._last_active_time is not None
+                    and (timestamp - self._last_active_time).total_seconds()
+                    >= self._config.unmatched_off_delay
                 ):
-                    effective_off_delay = self._config.unmatched_off_delay
-                else:
-                    effective_off_delay = max(self._config.off_delay, self._config.min_off_gap)
+                    self._logger.debug(
+                        "Unmatched anti-wrinkle graceful end: %.0fs since last real activity",
+                        (timestamp - self._last_active_time).total_seconds(),
+                    )
+                    self._finish_cycle(
+                        timestamp,
+                        status="completed",
+                        termination_reason="timeout",
+                        keep_tail=False,
+                    )
+                    return
 ```
+
+If `_last_active_time` is not populated on the code path reached here, read how the neighboring timeout branch obtains the last-activity timestamp and use the same source; do NOT invent a new field.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `.venv/Scripts/python -m pytest tests/test_blip_tolerant_end.py::test_dryer_unmatched_off_delay_used -v`
-Expected: PASS.
+Run: `.venv/Scripts/python -m pytest tests/test_blip_tolerant_end.py::test_dryer_finishes_despite_energy_gate -v`
+Expected: PASS. Also run `tests/test_blip_tolerant_end.py` in full to confirm Task 2's test still passes.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add custom_components/ha_washdata/cycle_detector.py tests/test_blip_tolerant_end.py
-git commit -m "feat: use unmatched_off_delay for graceful end of unmatched anti-wrinkle cycles
+git commit -m "feat: profile-independent graceful end for unmatched dryer anti-wrinkle cycles
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 4: Washing-machine conservative guard (spin-seen)
+### Task 4: Extend the graceful end to the washing machine (conservative long window)
+
+**Decision (supersedes the spec's spin-seen guard):** distinguishing a WM spin from heating in the power curve proved intractable (both are high-power). Instead, the WM gets the SAME graceful-end branch as the dryer, with conservatism coming entirely from its long `unmatched_off_delay` (2400 s = 40 min of no real activity). A WM soak/pause between phases is effectively never 40 min, so a false early finish is not a realistic risk. The now-unused `WM_SPIN_SEEN_W` constant is removed.
 
 **Files:**
-- Modify: `custom_components/ha_washdata/cycle_detector.py` (`_is_anti_crease_blip`)
+- Modify: `custom_components/ha_washdata/cycle_detector.py` (device-gate tuple in the Task-3 graceful-end branch)
+- Modify: `custom_components/ha_washdata/const.py` (remove `WM_SPIN_SEEN_W`)
 - Test: `tests/test_blip_tolerant_end.py`
 
 **Interfaces:**
-- Consumes: `WM_SPIN_SEEN_W` (Task 1); `_is_anti_crease_blip` (Task 2).
+- Consumes: the graceful-end branch added in Task 3; `unmatched_off_delay`, `crease_resume_threshold`, `anti_wrinkle_enabled` (Task 1).
 
 - [ ] **Step 1: Write the failing tests**
 
-A WM that reaches a low-power lull WITHOUT a prior spin-magnitude peak must NOT be treated as ended (guards mid-program soak); a WM that HAS seen a spin then shows crease blips must reach ANTI_WRINKLE:
+A WM (unmatched, anti-wrinkle) that has run a real program and then sits quiet past `unmatched_off_delay` must reach ANTI_WRINKLE; one whose quiet period is SHORTER than `unmatched_off_delay` must NOT finish early. Append to `tests/test_blip_tolerant_end.py`:
 
 ```python
 def _wm_cfg() -> CycleDetectorConfig:
     return CycleDetectorConfig(
-        min_power=5.0, off_delay=2400, device_type=DEVICE_TYPE_WASHING_MACHINE,
+        min_power=5.0, off_delay=3600, device_type=DEVICE_TYPE_WASHING_MACHINE,
         anti_wrinkle_enabled=True, crease_resume_threshold=250.0, unmatched_off_delay=2400,
         stop_threshold_w=2.0, start_threshold_w=5.0,
     )
 
-def test_wm_soak_before_spin_not_ended_early():
+def test_wm_unmatched_finishes_after_long_quiet():
     det = CycleDetector(config=_wm_cfg(), on_state_change=lambda *a: None, on_cycle_end=lambda *a: None)
-    # Wash with heating (max ~2000W) but NO spin-magnitude tail before the lull...
-    det.process_reading(2000.0, dt(0))
-    for t in range(10, 1200, 10):
-        det.process_reading(60.0, dt(t))          # tumbling only
-    for t in range(1200, 1600, 10):
-        det.process_reading(1.0, dt(t))           # mid-program soak
-    t = 1600
-    while t < 3000 and det.state == STATE_ENDING:
-        det.process_reading(20.0, dt(t)); t += 6  # small blips look like crease but no spin happened
-        for _ in range(20):
-            det.process_reading(1.0, dt(t)); t += 6
-    assert det.state != STATE_ANTI_WRINKLE  # must not finish early: no spin seen
-
-def test_wm_after_spin_reaches_anti_wrinkle():
-    det = CycleDetector(config=_wm_cfg(), on_state_change=lambda *a: None, on_cycle_end=lambda *a: None)
-    det.process_reading(2000.0, dt(0))
-    for t in range(10, 1200, 10):
-        det.process_reading(60.0, dt(t))
-    for t in range(1200, 1500, 10):
-        det.process_reading(400.0, dt(t))         # final spin (>= WM_SPIN_SEEN_W)
-    for t in range(1500, 1700, 10):
-        det.process_reading(1.0, dt(t))
-    t = 1700
-    while t < 5000 and det.state == STATE_ENDING:
-        det.process_reading(20.0, dt(t)); t += 6  # crease blips
+    det.process_reading(2000.0, dt(0))                 # heating (real program, unmatched)
+    for t in range(10, 1500, 10):
+        det.process_reading(60.0, dt(t))               # wash tumbling
+    for t in range(1500, 1800, 10):
+        det.process_reading(400.0, dt(t))              # final spin -> last real activity ~t=1790
+    for t in range(1800, 2000, 10):
+        det.process_reading(1.0, dt(t))                # power drops -> ENDING
+    # Crease tail (12-30 W blips) well past unmatched_off_delay (2400 s)
+    t = 2000
+    while t < 1790 + 2400 + 600 and det.state == STATE_ENDING:
+        det.process_reading(20.0, dt(t)); t += 6
         for _ in range(20):
             det.process_reading(1.0, dt(t)); t += 6
     assert det.state == STATE_ANTI_WRINKLE
+
+def test_wm_short_quiet_not_finished_early():
+    det = CycleDetector(config=_wm_cfg(), on_state_change=lambda *a: None, on_cycle_end=lambda *a: None)
+    det.process_reading(2000.0, dt(0))
+    for t in range(10, 1500, 10):
+        det.process_reading(60.0, dt(t))
+    for t in range(1500, 1800, 10):
+        det.process_reading(400.0, dt(t))              # spin, last real activity ~t=1790
+    # Quiet for only ~10 min (< unmatched_off_delay 2400 s)
+    t = 1800
+    while t < 1790 + 600:
+        det.process_reading(1.0, dt(t)); t += 10
+    assert det.state != STATE_ANTI_WRINKLE              # must NOT finish early
 ```
 
 - [ ] **Step 2: Run to verify failure**
 
 Run: `.venv/Scripts/python -m pytest tests/test_blip_tolerant_end.py -k wm -v`
-Expected: `test_wm_soak_before_spin_not_ended_early` FAILS (soak wrongly treated as crease → early ANTI_WRINKLE).
+Expected: `test_wm_unmatched_finishes_after_long_quiet` FAILS (WM excluded from the dryer-only device gate → never reaches ANTI_WRINKLE via the graceful-end branch).
 
-- [ ] **Step 3: Add the WM spin-seen guard**
+- [ ] **Step 3: Widen the device gate + remove unused constant**
 
-In `_is_anti_crease_blip`, before the final `return`, add the device-specific guard (import `WM_SPIN_SEEN_W` and `DEVICE_TYPE_WASHING_MACHINE` at top of file if not present):
+In `cycle_detector.py`, in the Task-3 graceful-end branch, add `DEVICE_TYPE_WASHING_MACHINE` to the device tuple:
 
 ```python
-        if self._config.device_type == DEVICE_TYPE_WASHING_MACHINE:
-            # WM: only after a real spin (the last phase); a mid-program soak
-            # is never preceded by a spin, so it stays a normal ENDING.
-            if self._cycle_max_power < WM_SPIN_SEEN_W:
-                return False
+                    and self._config.device_type
+                    in (
+                        DEVICE_TYPE_DRYER,
+                        DEVICE_TYPE_WASHER_DRYER,
+                        DEVICE_TYPE_WASHING_MACHINE,
+                    )
 ```
 
-Note: for the WM the anti-ghost floor is `crease_resume_threshold` (250 W) which equals a low spin; `WM_SPIN_SEEN_W` (250 W) keeps the intent explicit. In `test_wm_soak_before_spin_not_ended_early` `_cycle_max_power` reaches 2000 W (heating) — so tighten the guard to require a spin AFTER the last heating: track `_last_high_was_spin`. **Simplification for v1:** require `_cycle_max_power` to include a spin-band peak recorded during a *post-heating low-energy phase*. If that tracking is out of scope for v1, gate the WM path OFF by default instead (see Task 5) and keep dryer-only live-first.
+In `const.py`, remove the `WM_SPIN_SEEN_W = 250.0` line. First confirm it is not imported anywhere: run `grep -rn WM_SPIN_SEEN_W custom_components tests` — it must appear only at its definition (Task 1 left it unused). If any import references it, remove those too.
 
 - [ ] **Step 4: Run to verify pass**
 
 Run: `.venv/Scripts/python -m pytest tests/test_blip_tolerant_end.py -k wm -v`
-Expected: both PASS. If the simple `_cycle_max_power` guard cannot separate heating from spin (both high), implement `_spin_seen` tracking: set a flag when an `is_high` reading in `crease_resume_threshold..(0.5*max_heating)` band occurs after `_time_above_threshold` decays — OR defer the WM path per Task 5.
+Expected: both PASS. Then the full module: `.venv/Scripts/python -m pytest tests/test_blip_tolerant_end.py -v` (all prior tests still green).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add custom_components/ha_washdata/cycle_detector.py tests/test_blip_tolerant_end.py
-git commit -m "feat: WM spin-seen guard prevents early finish on mid-program soak
+git add custom_components/ha_washdata/cycle_detector.py custom_components/ha_washdata/const.py tests/test_blip_tolerant_end.py
+git commit -m "feat: extend graceful end to washing machine (conservative long window)
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
