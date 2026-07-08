@@ -545,6 +545,21 @@ class CycleDetector:
         """Return the expected duration of the current cycle in seconds."""
         return self._expected_duration
 
+    def _is_anti_crease_blip(self, power: float) -> bool:
+        """True if this high reading is a post-program crease-guard blip that
+        must NOT reset the end timer (unmatched, anti-wrinkle-enabled cycles only)."""
+        if not self._config.anti_wrinkle_enabled:
+            return False
+        if self._state != STATE_ENDING or self._time_in_state < 120.0:
+            return False
+        if self._expected_duration > 0:
+            return False
+        # Anti-ghost: a real program (heating/spin) must have occurred.
+        if self._cycle_max_power < self._config.crease_resume_threshold:
+            return False
+        # A sustained/high rise is a genuine resumption, not a blip.
+        return power < self._config.crease_resume_threshold
+
     def process_reading(self, power: float, timestamp: datetime) -> None:
         """Process a new power reading using robust dt-aware logic."""
 
@@ -605,7 +620,7 @@ class CycleDetector:
 
         is_high = power >= threshold
 
-        if is_high:
+        if is_high and not self._is_anti_crease_blip(power):
             self._time_above_threshold += dt
             self._time_below_threshold = 0.0
             # Energy integration (trapezoidal approx for this single step)
