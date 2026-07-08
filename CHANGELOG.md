@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### ✨ Features
 - **Blip-Tolerant Graceful End for Unmatched Anti-Wrinkle Cycles**: Dryer, washer-dryer, and washing-machine cycles that end without matching a known profile now leave the *Anti-Wrinkle* state via a graceful timeout instead of being force-stopped by the watchdog. Periodic anti-crease drum blips previously kept resetting the end-detection timer indefinitely on unmatched cycles, so the finish notification only ever arrived via the coarser watchdog `force_stop` path. Two new Advanced Settings options (under **Anti-Wrinkle Shield**) tune this: **Crease Resume Threshold** (W) — power below this during the tail is treated as an anti-crease blip rather than a resumed cycle — and **Unmatched Off Delay** (s) — how long an unmatched anti-wrinkle cycle can stay quiet before it gracefully ends. Both default to the previously hardcoded values (400 W / 1800 s, with device-specific internal defaults unchanged) and only apply when the Anti-Wrinkle Shield is enabled; disabling it restores the previous blip-resets-timer behavior exactly.
 
+### ⚠️ Known Limitations
+- **Washing Machine Graceful End Has No Spin-Seen Guard**: The blip-tolerant graceful end for unmatched washing-machine cycles (above) relies solely on the `unmatched_off_delay` timeout (default 2400 s / 40 min) to decide the program is over — it does not separately confirm that a spin phase actually occurred. A washer whose cold soak/prewash phase stays entirely below `crease_resume_threshold` for longer than `unmatched_off_delay` can therefore be marked complete prematurely. This is a conscious tradeoff (a spin-seen guard was considered and deferred, see plan history). Mitigation: raise `unmatched_off_delay` under Advanced Settings if your machine's soak/prewash regularly exceeds the default window.
+
 <br>
 
 ## 0.4.5.10 (fork) - 2026-07-06
