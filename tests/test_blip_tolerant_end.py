@@ -144,5 +144,18 @@ def test_disabled_device_resets_as_before():
         det.process_reading(170.0, dt(t)); t += 6
         for _ in range(28):
             det.process_reading(1.0, dt(t)); t += 6
-    # anti-wrinkle disabled -> blip resets timer -> does NOT reach ANTI_WRINKLE via this path
-    assert det.state != STATE_ANTI_WRINKLE
+    # Fail-capable check: with anti_wrinkle_enabled=False, the new graceful-end
+    # branch (cycle_detector.py ~1138-1162) must never fire, so the cycle can
+    # only progress via the pre-existing fallback-timeout/energy-gate path.
+    # That path's energy gate (default end_energy_threshold=0.05 Wh) stays
+    # shut because each 170 W blip injects far more energy than 0.05 Wh into
+    # its trailing off_delay-sized window, so the cycle never reaches
+    # STATE_FINISHED either -- it is stuck in STATE_ENDING for the whole
+    # probe window. Empirically verified (see task-5-report.md): with this
+    # same config except anti_wrinkle_enabled=True, the identical power
+    # sequence reaches STATE_ANTI_WRINKLE well before the loop bound, so this
+    # equality assertion WOULD fail if the new branch's anti_wrinkle_enabled
+    # guard were bypassed -- i.e. it is genuinely fail-capable, unlike the
+    # previous `!= STATE_ANTI_WRINKLE` assertion (which the pre-existing
+    # _finish_cycle gate at cycle_detector.py ~1491-1497 satisfies on its own).
+    assert det.state == STATE_ENDING
