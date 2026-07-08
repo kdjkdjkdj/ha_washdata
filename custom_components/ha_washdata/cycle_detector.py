@@ -86,6 +86,8 @@ class CycleDetectorConfig:
     anti_wrinkle_max_power: float = 400.0
     anti_wrinkle_max_duration: float = 60.0
     anti_wrinkle_exit_power: float = 0.8
+    crease_resume_threshold: float = 400.0
+    unmatched_off_delay: int = 1800
     delay_detect_enabled: bool = False
     # Sustained seconds power must stay in the standby band (between
     # stop_threshold_w and start_threshold_w) before DELAY_WAIT engages.

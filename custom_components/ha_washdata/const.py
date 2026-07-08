@@ -71,6 +71,8 @@ CONF_ANTI_WRINKLE_ENABLED = "anti_wrinkle_enabled"  # Dryer anti-wrinkle shieldi
 CONF_ANTI_WRINKLE_MAX_POWER = "anti_wrinkle_max_power"  # W threshold for anti-wrinkle spikes
 CONF_ANTI_WRINKLE_MAX_DURATION = "anti_wrinkle_max_duration"  # Seconds to treat as anti-wrinkle
 CONF_ANTI_WRINKLE_EXIT_POWER = "anti_wrinkle_exit_power"  # W threshold for true-off exit
+CONF_CREASE_RESUME_THRESHOLD = "crease_resume_threshold"  # W: below this in ENDING tail = anti-crease blip
+CONF_UNMATCHED_OFF_DELAY = "unmatched_off_delay"  # s: graceful end delay for unmatched anti-wrinkle cycles
 CONF_DELAY_START_DETECT_ENABLED = "delay_start_detect_enabled"  # Enable delayed-start detection
 CONF_DELAY_CONFIRM_SECONDS = "delay_confirm_seconds"  # Seconds power must stay in standby band before DELAY_WAIT engages
 CONF_DELAY_TIMEOUT_HOURS = "delay_timeout_hours"  # Safety timeout (hours) while waiting to start
@@ -184,6 +186,19 @@ DEFAULT_ANTI_WRINKLE_ENABLED = False
 DEFAULT_ANTI_WRINKLE_MAX_POWER = 400.0  # W
 DEFAULT_ANTI_WRINKLE_MAX_DURATION = 60.0  # s
 DEFAULT_ANTI_WRINKLE_EXIT_POWER = 0.8  # W
+DEFAULT_CREASE_RESUME_THRESHOLD = 400.0  # W
+DEFAULT_CREASE_RESUME_THRESHOLD_BY_DEVICE = {
+    "dryer": 1000.0,
+    "washer_dryer": 1000.0,
+    "washing_machine": 250.0,
+}
+DEFAULT_UNMATCHED_OFF_DELAY = 1800  # s
+DEFAULT_UNMATCHED_OFF_DELAY_BY_DEVICE = {
+    "dryer": 900,
+    "washer_dryer": 900,
+    "washing_machine": 2400,
+}
+WM_SPIN_SEEN_W = 250.0  # washing machine: a spin-magnitude peak must have occurred before blip-tolerant finish
 
 # Delayed-start detection defaults (disabled by default).
 #
