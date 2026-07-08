@@ -1133,12 +1133,17 @@ class CycleDetector:
                 # blips keep the raw-power energy gate shut. Finish on time since
                 # the last *real* activity (blips excluded via _last_active_time,
                 # see _is_anti_crease_blip). termination_reason "timeout" routes to
-                # STATE_ANTI_WRINKLE. Dryer/washer_dryer only here; Task 4 adds WM.
+                # STATE_ANTI_WRINKLE. WM conservatism comes from its long
+                # unmatched_off_delay (2400s) rather than a spin-seen guard.
                 if (
                     self._expected_duration <= 0
                     and self._config.anti_wrinkle_enabled
                     and self._config.device_type
-                    in (DEVICE_TYPE_DRYER, DEVICE_TYPE_WASHER_DRYER)
+                    in (
+                        DEVICE_TYPE_DRYER,
+                        DEVICE_TYPE_WASHER_DRYER,
+                        DEVICE_TYPE_WASHING_MACHINE,
+                    )
                     and self._cycle_max_power >= self._config.crease_resume_threshold
                     and self._last_active_time is not None
                     and (timestamp - self._last_active_time).total_seconds()

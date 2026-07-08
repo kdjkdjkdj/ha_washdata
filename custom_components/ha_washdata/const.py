@@ -198,7 +198,6 @@ DEFAULT_UNMATCHED_OFF_DELAY_BY_DEVICE = {
     "washer_dryer": 900,
     "washing_machine": 2400,
 }
-WM_SPIN_SEEN_W = 250.0  # washing machine: a spin-magnitude peak must have occurred before blip-tolerant finish
 
 # Delayed-start detection defaults (disabled by default).
 #

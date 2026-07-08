@@ -90,3 +90,41 @@ def test_dryer_finishes_despite_energy_gate():
             det.process_reading(1.0, dt(t)); t += 6
     assert det.state == STATE_ANTI_WRINKLE
     # finished within ~unmatched_off_delay of the last blip's real-activity reset semantics
+
+
+def _wm_cfg() -> CycleDetectorConfig:
+    return CycleDetectorConfig(
+        min_power=5.0, off_delay=3600, device_type=DEVICE_TYPE_WASHING_MACHINE,
+        anti_wrinkle_enabled=True, crease_resume_threshold=250.0, unmatched_off_delay=2400,
+        stop_threshold_w=2.0, start_threshold_w=5.0,
+    )
+
+def test_wm_unmatched_finishes_after_long_quiet():
+    det = CycleDetector(config=_wm_cfg(), on_state_change=lambda *a: None, on_cycle_end=lambda *a: None)
+    det.process_reading(2000.0, dt(0))                 # heating (real program, unmatched)
+    for t in range(10, 1500, 10):
+        det.process_reading(60.0, dt(t))               # wash tumbling
+    for t in range(1500, 1800, 10):
+        det.process_reading(400.0, dt(t))              # final spin -> last real activity ~t=1790
+    for t in range(1800, 2000, 10):
+        det.process_reading(1.0, dt(t))                # power drops -> ENDING
+    # Crease tail (12-30 W blips) well past unmatched_off_delay (2400 s)
+    t = 2000
+    while t < 1790 + 2400 + 600 and det.state == STATE_ENDING:
+        det.process_reading(20.0, dt(t)); t += 6
+        for _ in range(20):
+            det.process_reading(1.0, dt(t)); t += 6
+    assert det.state == STATE_ANTI_WRINKLE
+
+def test_wm_short_quiet_not_finished_early():
+    det = CycleDetector(config=_wm_cfg(), on_state_change=lambda *a: None, on_cycle_end=lambda *a: None)
+    det.process_reading(2000.0, dt(0))
+    for t in range(10, 1500, 10):
+        det.process_reading(60.0, dt(t))
+    for t in range(1500, 1800, 10):
+        det.process_reading(400.0, dt(t))              # spin, last real activity ~t=1790
+    # Quiet for only ~10 min (< unmatched_off_delay 2400 s)
+    t = 1800
+    while t < 1790 + 600:
+        det.process_reading(1.0, dt(t)); t += 10
+    assert det.state != STATE_ANTI_WRINKLE              # must NOT finish early
