@@ -149,7 +149,9 @@ from .const import (
     DEFAULT_ANTI_WRINKLE_MAX_DURATION,
     DEFAULT_ANTI_WRINKLE_EXIT_POWER,
     DEFAULT_CREASE_RESUME_THRESHOLD,
+    DEFAULT_CREASE_RESUME_THRESHOLD_BY_DEVICE,
     DEFAULT_UNMATCHED_OFF_DELAY,
+    DEFAULT_UNMATCHED_OFF_DELAY_BY_DEVICE,
     DEFAULT_DELAY_START_DETECT_ENABLED,
     DEFAULT_DELAY_CONFIRM_SECONDS,
     DEFAULT_DELAY_TIMEOUT_HOURS,
@@ -1189,6 +1191,13 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             current_device_type, DEFAULT_PROFILE_MATCH_MIN_DURATION_RATIO
         )
 
+        default_crease_resume_threshold = DEFAULT_CREASE_RESUME_THRESHOLD_BY_DEVICE.get(
+            current_device_type, DEFAULT_CREASE_RESUME_THRESHOLD
+        )
+        default_unmatched_off_delay = DEFAULT_UNMATCHED_OFF_DELAY_BY_DEVICE.get(
+            current_device_type, DEFAULT_UNMATCHED_OFF_DELAY
+        )
+
         detection_schema = {
             vol.Optional(
                 CONF_START_DURATION_THRESHOLD,
@@ -1461,7 +1470,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             vol.Optional(
                 CONF_CREASE_RESUME_THRESHOLD,
                 default=get_val(
-                    CONF_CREASE_RESUME_THRESHOLD, DEFAULT_CREASE_RESUME_THRESHOLD
+                    CONF_CREASE_RESUME_THRESHOLD, default_crease_resume_threshold
                 ),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
@@ -1475,7 +1484,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             vol.Optional(
                 CONF_UNMATCHED_OFF_DELAY,
                 default=get_val(
-                    CONF_UNMATCHED_OFF_DELAY, DEFAULT_UNMATCHED_OFF_DELAY
+                    CONF_UNMATCHED_OFF_DELAY, default_unmatched_off_delay
                 ),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(

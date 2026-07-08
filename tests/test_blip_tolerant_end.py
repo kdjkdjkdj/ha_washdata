@@ -6,12 +6,12 @@ from custom_components.ha_washdata.cycle_detector import (
     CycleDetector,
     CycleDetectorConfig,
     STATE_ENDING,
-    STATE_RUNNING,
     STATE_FINISHED,
     STATE_ANTI_WRINKLE,
     DEVICE_TYPE_DRYER,
     DEVICE_TYPE_WASHING_MACHINE,
 )
+from custom_components.ha_washdata.const import DEVICE_TYPE_DISHWASHER
 
 
 def dt(s: float) -> datetime:
@@ -159,3 +159,32 @@ def test_disabled_device_resets_as_before():
     # previous `!= STATE_ANTI_WRINKLE` assertion (which the pre-existing
     # _finish_cycle gate at cycle_detector.py ~1491-1497 satisfies on its own).
     assert det.state == STATE_ENDING
+
+
+def test_dishwasher_untouched_by_anti_crease_classifier():
+    """Unsupported device types must never reach STATE_ANTI_WRINKLE via the
+    crease-blip classifier, even with anti_wrinkle_enabled=True (structural
+    device_type gate in _is_anti_crease_blip, not merely default-off)."""
+    cfg = CycleDetectorConfig(
+        min_power=5.0,
+        off_delay=1800,
+        device_type=DEVICE_TYPE_DISHWASHER,
+        anti_wrinkle_enabled=True,
+        crease_resume_threshold=1000.0,
+        unmatched_off_delay=900,
+        stop_threshold_w=2.0,
+        start_threshold_w=5.0,
+        end_energy_threshold=1000.0,
+    )
+    det = CycleDetector(config=cfg, on_state_change=lambda *a: None, on_cycle_end=lambda *a: None)
+    det.process_reading(2000.0, dt(0))
+    for t in range(10, 2400, 10):
+        det.process_reading(2000.0, dt(t))
+    for t in range(2400, 2600, 10):
+        det.process_reading(1.0, dt(t))
+    t = 2600
+    while t < 4600 and det.state == STATE_ENDING:
+        det.process_reading(170.0, dt(t)); t += 6
+        for _ in range(28):
+            det.process_reading(1.0, dt(t)); t += 6
+    assert det.state != STATE_ANTI_WRINKLE

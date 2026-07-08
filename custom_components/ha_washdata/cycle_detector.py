@@ -550,6 +550,12 @@ class CycleDetector:
         must NOT reset the end timer (unmatched, anti-wrinkle-enabled cycles only)."""
         if not self._config.anti_wrinkle_enabled:
             return False
+        if self._config.device_type not in (
+            DEVICE_TYPE_DRYER,
+            DEVICE_TYPE_WASHER_DRYER,
+            DEVICE_TYPE_WASHING_MACHINE,
+        ):
+            return False
         if self._state != STATE_ENDING or self._time_in_state < 120.0:
             return False
         if self._expected_duration > 0:
