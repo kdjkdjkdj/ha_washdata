@@ -1128,6 +1128,34 @@ class CycleDetector:
                             )
                             return
 
+                # --- PROFILE-INDEPENDENT GRACEFUL END (unmatched anti-wrinkle) ---
+                # No matched profile => no smart-termination; and the crease-guard
+                # blips keep the raw-power energy gate shut. Finish on time since
+                # the last *real* activity (blips excluded via _last_active_time,
+                # see _is_anti_crease_blip). termination_reason "timeout" routes to
+                # STATE_ANTI_WRINKLE. Dryer/washer_dryer only here; Task 4 adds WM.
+                if (
+                    self._expected_duration <= 0
+                    and self._config.anti_wrinkle_enabled
+                    and self._config.device_type
+                    in (DEVICE_TYPE_DRYER, DEVICE_TYPE_WASHER_DRYER)
+                    and self._cycle_max_power >= self._config.crease_resume_threshold
+                    and self._last_active_time is not None
+                    and (timestamp - self._last_active_time).total_seconds()
+                    >= self._config.unmatched_off_delay
+                ):
+                    self._logger.debug(
+                        "Unmatched anti-wrinkle graceful end: %.0fs since last real activity",
+                        (timestamp - self._last_active_time).total_seconds(),
+                    )
+                    self._finish_cycle(
+                        timestamp,
+                        status="completed",
+                        termination_reason="timeout",
+                        keep_tail=False,
+                    )
+                    return
+
                 # --- FALLBACK TIMEOUT CHECK ---
                 # Rule: To separate cycles, we must wait at least min_off_gap.
                 effective_off_delay = max(self._config.off_delay, self._config.min_off_gap)

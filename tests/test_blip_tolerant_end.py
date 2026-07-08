@@ -66,3 +66,27 @@ def test_dryer_crease_blips_reach_anti_wrinkle():
         for _ in range(28):                                # ~2.8 min near-zero
             det.process_reading(1.0, dt(t)); t += 6
     assert det.state == STATE_ANTI_WRINKLE
+
+
+def _dryer_cfg_realistic() -> CycleDetectorConfig:
+    return CycleDetectorConfig(
+        min_power=5.0, off_delay=1800, device_type=DEVICE_TYPE_DRYER,
+        anti_wrinkle_enabled=True, crease_resume_threshold=1000.0,
+        unmatched_off_delay=900, stop_threshold_w=2.0, start_threshold_w=5.0,
+    )  # note: default end_energy_threshold (0.05) — the energy gate is in play
+
+def test_dryer_finishes_despite_energy_gate():
+    det = CycleDetector(config=_dryer_cfg_realistic(), on_state_change=lambda *a: None, on_cycle_end=lambda *a: None)
+    det.process_reading(2000.0, dt(0))
+    for t in range(10, 2400, 10):
+        det.process_reading(2000.0, dt(t))            # ~40 min real drying, unmatched
+    for t in range(2400, 2600, 10):
+        det.process_reading(1.0, dt(t))               # power drops -> ENDING
+    # Crease tail: 170 W blip every ~3 min for a long time; last REAL activity was t~2390
+    t = 2600
+    while t < 6000 and det.state == STATE_ENDING:
+        det.process_reading(170.0, dt(t)); t += 6
+        for _ in range(28):
+            det.process_reading(1.0, dt(t)); t += 6
+    assert det.state == STATE_ANTI_WRINKLE
+    # finished within ~unmatched_off_delay of the last blip's real-activity reset semantics
