@@ -86,6 +86,8 @@ from .const import (
     CONF_ANTI_WRINKLE_MAX_POWER,
     CONF_ANTI_WRINKLE_MAX_DURATION,
     CONF_ANTI_WRINKLE_EXIT_POWER,
+    CONF_CREASE_RESUME_THRESHOLD,
+    CONF_UNMATCHED_OFF_DELAY,
     CONF_DELAY_START_DETECT_ENABLED,
     CONF_DELAY_CONFIRM_SECONDS,
     CONF_DELAY_TIMEOUT_HOURS,
@@ -127,6 +129,10 @@ from .const import (
     DEFAULT_ANTI_WRINKLE_MAX_POWER,
     DEFAULT_ANTI_WRINKLE_MAX_DURATION,
     DEFAULT_ANTI_WRINKLE_EXIT_POWER,
+    DEFAULT_CREASE_RESUME_THRESHOLD,
+    DEFAULT_CREASE_RESUME_THRESHOLD_BY_DEVICE,
+    DEFAULT_UNMATCHED_OFF_DELAY,
+    DEFAULT_UNMATCHED_OFF_DELAY_BY_DEVICE,
     DEFAULT_DELAY_START_DETECT_ENABLED,
     DEFAULT_DELAY_CONFIRM_SECONDS,
     DEFAULT_DELAY_TIMEOUT_HOURS,
@@ -558,6 +564,22 @@ class WashDataManager:
             anti_wrinkle_exit_power=float(
                 config_entry.options.get(
                     CONF_ANTI_WRINKLE_EXIT_POWER, DEFAULT_ANTI_WRINKLE_EXIT_POWER
+                )
+            ),
+            crease_resume_threshold=float(
+                config_entry.options.get(
+                    CONF_CREASE_RESUME_THRESHOLD,
+                    DEFAULT_CREASE_RESUME_THRESHOLD_BY_DEVICE.get(
+                        self.device_type, DEFAULT_CREASE_RESUME_THRESHOLD
+                    ),
+                )
+            ),
+            unmatched_off_delay=int(
+                config_entry.options.get(
+                    CONF_UNMATCHED_OFF_DELAY,
+                    DEFAULT_UNMATCHED_OFF_DELAY_BY_DEVICE.get(
+                        self.device_type, DEFAULT_UNMATCHED_OFF_DELAY
+                    ),
                 )
             ),
             delay_detect_enabled=bool(

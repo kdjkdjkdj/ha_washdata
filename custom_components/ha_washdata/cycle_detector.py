@@ -86,6 +86,8 @@ class CycleDetectorConfig:
     anti_wrinkle_max_power: float = 400.0
     anti_wrinkle_max_duration: float = 60.0
     anti_wrinkle_exit_power: float = 0.8
+    crease_resume_threshold: float = 400.0
+    unmatched_off_delay: int = 1800
     delay_detect_enabled: bool = False
     # Sustained seconds power must stay in the standby band (between
     # stop_threshold_w and start_threshold_w) before DELAY_WAIT engages.
@@ -543,6 +545,27 @@ class CycleDetector:
         """Return the expected duration of the current cycle in seconds."""
         return self._expected_duration
 
+    def _is_anti_crease_blip(self, power: float) -> bool:
+        """True if this high reading is a post-program crease-guard blip that
+        must NOT reset the end timer (unmatched, anti-wrinkle-enabled cycles only)."""
+        if not self._config.anti_wrinkle_enabled:
+            return False
+        if self._config.device_type not in (
+            DEVICE_TYPE_DRYER,
+            DEVICE_TYPE_WASHER_DRYER,
+            DEVICE_TYPE_WASHING_MACHINE,
+        ):
+            return False
+        if self._state != STATE_ENDING or self._time_in_state < 120.0:
+            return False
+        if self._expected_duration > 0:
+            return False
+        # Anti-ghost: a real program (heating/spin) must have occurred.
+        if self._cycle_max_power < self._config.crease_resume_threshold:
+            return False
+        # A sustained/high rise is a genuine resumption, not a blip.
+        return power < self._config.crease_resume_threshold
+
     def process_reading(self, power: float, timestamp: datetime) -> None:
         """Process a new power reading using robust dt-aware logic."""
 
@@ -603,7 +626,7 @@ class CycleDetector:
 
         is_high = power >= threshold
 
-        if is_high:
+        if is_high and not self._is_anti_crease_blip(power):
             self._time_above_threshold += dt
             self._time_below_threshold = 0.0
             # Energy integration (trapezoidal approx for this single step)
@@ -1110,6 +1133,39 @@ class CycleDetector:
                                 keep_tail=True,
                             )
                             return
+
+                # --- PROFILE-INDEPENDENT GRACEFUL END (unmatched anti-wrinkle) ---
+                # No matched profile => no smart-termination; and the crease-guard
+                # blips keep the raw-power energy gate shut. Finish on time since
+                # the last *real* activity (blips excluded via _last_active_time,
+                # see _is_anti_crease_blip). termination_reason "timeout" routes to
+                # STATE_ANTI_WRINKLE. WM conservatism comes from its long
+                # unmatched_off_delay (2400s) rather than a spin-seen guard.
+                if (
+                    self._expected_duration <= 0
+                    and self._config.anti_wrinkle_enabled
+                    and self._config.device_type
+                    in (
+                        DEVICE_TYPE_DRYER,
+                        DEVICE_TYPE_WASHER_DRYER,
+                        DEVICE_TYPE_WASHING_MACHINE,
+                    )
+                    and self._cycle_max_power >= self._config.crease_resume_threshold
+                    and self._last_active_time is not None
+                    and (timestamp - self._last_active_time).total_seconds()
+                    >= self._config.unmatched_off_delay
+                ):
+                    self._logger.debug(
+                        "Unmatched anti-wrinkle graceful end: %.0fs since last real activity",
+                        (timestamp - self._last_active_time).total_seconds(),
+                    )
+                    self._finish_cycle(
+                        timestamp,
+                        status="completed",
+                        termination_reason="timeout",
+                        keep_tail=False,
+                    )
+                    return
 
                 # --- FALLBACK TIMEOUT CHECK ---
                 # Rule: To separate cycles, we must wait at least min_off_gap.

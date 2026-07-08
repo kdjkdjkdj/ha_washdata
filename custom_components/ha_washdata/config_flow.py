@@ -75,6 +75,8 @@ from .const import (
     CONF_ANTI_WRINKLE_MAX_POWER,
     CONF_ANTI_WRINKLE_MAX_DURATION,
     CONF_ANTI_WRINKLE_EXIT_POWER,
+    CONF_CREASE_RESUME_THRESHOLD,
+    CONF_UNMATCHED_OFF_DELAY,
     CONF_DELAY_START_DETECT_ENABLED,
     CONF_DELAY_CONFIRM_SECONDS,
     CONF_DELAY_TIMEOUT_HOURS,
@@ -146,6 +148,10 @@ from .const import (
     DEFAULT_ANTI_WRINKLE_MAX_POWER,
     DEFAULT_ANTI_WRINKLE_MAX_DURATION,
     DEFAULT_ANTI_WRINKLE_EXIT_POWER,
+    DEFAULT_CREASE_RESUME_THRESHOLD,
+    DEFAULT_CREASE_RESUME_THRESHOLD_BY_DEVICE,
+    DEFAULT_UNMATCHED_OFF_DELAY,
+    DEFAULT_UNMATCHED_OFF_DELAY_BY_DEVICE,
     DEFAULT_DELAY_START_DETECT_ENABLED,
     DEFAULT_DELAY_CONFIRM_SECONDS,
     DEFAULT_DELAY_TIMEOUT_HOURS,
@@ -1185,6 +1191,13 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             current_device_type, DEFAULT_PROFILE_MATCH_MIN_DURATION_RATIO
         )
 
+        default_crease_resume_threshold = DEFAULT_CREASE_RESUME_THRESHOLD_BY_DEVICE.get(
+            current_device_type, DEFAULT_CREASE_RESUME_THRESHOLD
+        )
+        default_unmatched_off_delay = DEFAULT_UNMATCHED_OFF_DELAY_BY_DEVICE.get(
+            current_device_type, DEFAULT_UNMATCHED_OFF_DELAY
+        )
+
         detection_schema = {
             vol.Optional(
                 CONF_START_DURATION_THRESHOLD,
@@ -1451,6 +1464,34 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     max=10.0,
                     step=0.1,
                     unit_of_measurement="W",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                CONF_CREASE_RESUME_THRESHOLD,
+                default=get_val(
+                    CONF_CREASE_RESUME_THRESHOLD, default_crease_resume_threshold
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=10.0,
+                    max=2000.0,
+                    step=10.0,
+                    unit_of_measurement="W",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                CONF_UNMATCHED_OFF_DELAY,
+                default=get_val(
+                    CONF_UNMATCHED_OFF_DELAY, default_unmatched_off_delay
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=60.0,
+                    max=3600.0,
+                    step=30.0,
+                    unit_of_measurement="s",
                     mode=selector.NumberSelectorMode.BOX,
                 )
             ),
