@@ -5,6 +5,13 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.4.5.11 (fork) - 2026-07-08
+
+### ✨ Features
+- **Blip-Tolerant Graceful End for Unmatched Anti-Wrinkle Cycles**: Dryer, washer-dryer, and washing-machine cycles that end without matching a known profile now leave the *Anti-Wrinkle* state via a graceful timeout instead of being force-stopped by the watchdog. Periodic anti-crease drum blips previously kept resetting the end-detection timer indefinitely on unmatched cycles, so the finish notification only ever arrived via the coarser watchdog `force_stop` path. Two new Advanced Settings options (under **Anti-Wrinkle Shield**) tune this: **Crease Resume Threshold** (W) — power below this during the tail is treated as an anti-crease blip rather than a resumed cycle — and **Unmatched Off Delay** (s) — how long an unmatched anti-wrinkle cycle can stay quiet before it gracefully ends. Both default to the previously hardcoded values (400 W / 1800 s, with device-specific internal defaults unchanged) and only apply when the Anti-Wrinkle Shield is enabled; disabling it restores the previous blip-resets-timer behavior exactly.
+
+<br>
+
 ## 0.4.5.10 (fork) - 2026-07-06
 
 ### ✨ Features

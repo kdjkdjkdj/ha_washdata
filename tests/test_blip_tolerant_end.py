@@ -128,3 +128,21 @@ def test_wm_short_quiet_not_finished_early():
     while t < 1790 + 600:
         det.process_reading(1.0, dt(t)); t += 10
     assert det.state != STATE_ANTI_WRINKLE              # must NOT finish early
+
+
+def test_disabled_device_resets_as_before():
+    cfg = CycleDetectorConfig(min_power=5.0, off_delay=1800, device_type=DEVICE_TYPE_DRYER,
+                              anti_wrinkle_enabled=False, crease_resume_threshold=1000.0)
+    det = CycleDetector(config=cfg, on_state_change=lambda *a: None, on_cycle_end=lambda *a: None)
+    det.process_reading(2000.0, dt(0))
+    for t in range(10, 2400, 10):
+        det.process_reading(2000.0, dt(t))
+    for t in range(2400, 2600, 10):
+        det.process_reading(1.0, dt(t))
+    t = 2600
+    while t < 4600 and det.state == STATE_ENDING:
+        det.process_reading(170.0, dt(t)); t += 6
+        for _ in range(28):
+            det.process_reading(1.0, dt(t)); t += 6
+    # anti-wrinkle disabled -> blip resets timer -> does NOT reach ANTI_WRINKLE via this path
+    assert det.state != STATE_ANTI_WRINKLE
