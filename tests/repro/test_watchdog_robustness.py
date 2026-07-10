@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, AsyncMock, patch
 from homeassistant.util import dt as dt_util
 from custom_components.ha_washdata.manager import WashDataManager
-from custom_components.ha_washdata.const import STATE_RUNNING, STATE_OFF
+from custom_components.ha_washdata.const import STATE_RUNNING, STATE_PAUSED, STATE_OFF
 
 @pytest.fixture
 def mock_hass():
@@ -78,8 +78,12 @@ async def test_watchdog_low_power_survival(mock_hass, mock_entry):
         await manager._watchdog_check_stuck_cycle(t_check)
         
     # Assertions
-    # Should NOT have ended
-    assert manager.detector.state == STATE_RUNNING, "Watchdog killed waiting cycle too early!"
+    # Should NOT have ended/been killed. After sustained low-power silence the
+    # cycle legitimately transitions RUNNING -> PAUSED (a live state that will
+    # proceed to ENDING if silence continues). Previously this asserted strict
+    # RUNNING, which only held because the keepalive's large dt poisoned the
+    # cadence stat and inflated the pause threshold (the bug this branch fixes).
+    assert manager.detector.state in (STATE_RUNNING, STATE_PAUSED), "Watchdog killed waiting cycle too early!"
     
     # Check if we injected injection (logic: process_reading called with 0W)
     # We can check if _last_reading_time was updated to t_check

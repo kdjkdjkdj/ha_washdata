@@ -236,7 +236,7 @@ async def test_watchdog_injects_keepalive_after_no_update_timeout(
     await manager._watchdog_check_stuck_cycle(now)
 
     # Injection must have fired - process_reading(0.0, now) called.
-    detector.process_reading.assert_called_once_with(0.0, now)
+    detector.process_reading.assert_called_once_with(0.0, now, synthetic=True)
     # No force-end: the cycle should close gracefully, not be aborted.
     detector.force_end.assert_not_called()
 
