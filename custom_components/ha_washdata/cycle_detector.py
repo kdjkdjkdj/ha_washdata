@@ -566,8 +566,16 @@ class CycleDetector:
         # A sustained/high rise is a genuine resumption, not a blip.
         return power < self._config.crease_resume_threshold
 
-    def process_reading(self, power: float, timestamp: datetime) -> None:
-        """Process a new power reading using robust dt-aware logic."""
+    def process_reading(
+        self, power: float, timestamp: datetime, synthetic: bool = False
+    ) -> None:
+        """Process a new power reading using robust dt-aware logic.
+
+        ``synthetic=True`` marks watchdog-injected keepalive readings that must
+        keep the below-threshold accumulator advancing but must NOT feed the
+        cadence statistic (``_update_cadence``), otherwise their large dt would
+        poison ``_p95_dt`` and balloon ``_dynamic_end_threshold``.
+        """
 
         # Calculate dt (needed by the stop lockout below and the state machine).
         dt = 0.0
@@ -609,7 +617,8 @@ class CycleDetector:
                 )
                 # Fall through: the state machine will start a new cycle.
 
-        self._update_cadence(dt)
+        if not synthetic:
+            self._update_cadence(dt)
         self._last_process_time = timestamp
 
         # 1. Smoothing (Legacy buffer for debug/display, logic uses raw + time accumulators)
