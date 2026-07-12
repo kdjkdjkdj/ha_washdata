@@ -7,7 +7,8 @@
 ## Status snapshot
 
 - Branch `0.5.0` is **68 commits ahead of `main`, 0 behind**. Roadmap Groups **A–H merged**;
-  **G2 (community library) deferred**. Fast suite: **1007 passed, 1 skipped**.
+  **G2 (community library) deferred**. Fast suite: **1025 passed, 1 skipped** (after the
+  CodeRabbit review-hardening pass — see the 2026-07-12 progress-log entry).
 - Group A–H features sit in CHANGELOG **"Unreleased"** on top of the shipped `0.5.0` panel;
   `manifest.json` still `0.5.0` → needs a version bump before release.
 - Working tree has a **large uncommitted Playground rewrite** in `ha-washdata-panel.js`
@@ -119,13 +120,24 @@ Larger (remaining):
       drops the whole trace. `manager.py`.
 - [x] **B6 (LOW)** — FIXED: `reset()` now clears `_verified_pause` (`cycle_detector.py`).
 - [x] **B7 (LOW)** — FIXED: all 5 `c["id"]` lookups → `c.get("id")` (`learning.py`).
-- [ ] **B8 (LOW)** — Warmup auto-label guard bypassable under inverted threshold config
-      (`learning.py:426-484`). _Remaining — needs a degenerate config to trigger._
+- [x] **B8 (LOW)** — FIXED: warmup auto-label guard no longer bypassable. `_maybe_request_feedback`
+      routes through `route_conf` (preserves the real match confidence, handles an inverted
+      `learning_conf >= auto_label_conf` config) so a sub-warmup profile always requests manual
+      confirmation and never silently skips. Regression tests: `tests/test_warmup_gate.py` (4).
 - [ ] Smells: `manager.py` misleading "snapshot" comment; ENDING energy gate missing
       `max_gap_s` (`cycle_detector.py:~1270`); non-monotonic linear-fallback progress.
       _Remaining (cosmetic/fragile-but-correct)._
 - [ ] Optional storage **v9** bump to init additive keys (`lifetime_energy_wh`,
       `settings_changelog`, `maintenance_log`).
+- [ ] **Suggestion-scan snapshot (CR iter7 #4, DEFERRED)** — `learning._dispatch_scan_and_apply`
+      offloads the suggestion generators to an executor thread where they read the store's
+      **live** `get_profiles()` dict (cycle access is already `[-N:]`-sliced, so append-safe).
+      A concurrent envelope rebuild on the loop could race the profiles read. Low severity
+      (suggestion-path only — never touches live matching/detection; executor exceptions are
+      caught and just skip that round). Proper fix is a deep-copied `snapshot_for_analysis()`
+      threaded through every generator; deferred because that refactor has real GC-pressure
+      implications in the 5-min scan hot path and warrants deliberate testing, not an
+      autonomous review pass.
 
 Roadmap forward (post-release, per open GitHub issues):
 - [ ] #251 water consumption (WIP FR) — scope/design.
@@ -163,3 +175,25 @@ Roadmap forward (post-release, per open GitHub issues):
   ~867 EN keys); `sync_translations.py` HA-layer no-op. **Final gate green: fast suite 1012
   passed / 1 skipped, panel smoke OK, compileall OK, all 35 panel JSON valid.** Version
   stays 0.5.0 (manifest unchanged). Nothing committed (working tree, branch 0.5.0).
+- 2026-07-11/12 — **CodeRabbit review-hardening pass (implement→review iterated to a
+  convergence point).** Ran repeated full-diff reviews (iter6 13 findings → iter7 12 →
+  iter8 5 → iter9 22); stopped at iter9 once the review output became a *rotating* nitpick
+  set (each applied fix adds new review surface) rather than converging to zero. Every
+  critical/high/medium-value finding was applied; the residual is nitpicks, domain-wrong
+  suggestions (e.g. one told us to move `power_sensor` out of `entry.options`, contradicting
+  the documented options-first design), detection-adjacent risky tweaks, and design-deferred
+  items. Regression gate is the test suite, not another CR pass. Deep review of the whole 0.5.0 branch vs `main` (authenticated CodeRabbit
+  CLI + `coderabbit:code-reviewer` subagents); ~70 actionable findings applied across manager /
+  profile_store / ws_api / config_flow / learning / suggestion_engine / analysis /
+  signal_processing / ml (engine, trainer, training_task, matching_tuner) / panel.js, plus a
+  full backend-localization sweep (Python now returns `*_key`+`*_params`, JS renders via `_t`).
+  Highlights: stored-XSS `_esc`, quiet-hours notification-storm flag, config-flow options-first
+  resolution, 32KB `match_ranking_top5` sanitize (both write sites), warmup guard (B8), ML
+  in-sample/None-baseline promotion guards + operating-threshold calibration gate, matching-tuner
+  no-leakage multi-split majority gate, ML provider throttle, RBAC admin-command tightening +
+  `is_allowed_path` export/import guards, auto-pause dead-button fix, `binary_metrics` schema
+  alignment. **Findings that would regress detection/matching were deliberately REJECTED**
+  (time/gap-aware features + integrated-energy in the matcher — empirically worse in the
+  `ml_washdata` lab A/B; generated model files needing lab regeneration). **Gate green: fast
+  suite 1025/1 skipped, ML+parity 41, slow real-data replay 28/28 (matching top-1 unchanged),
+  compileall OK.** Version stays 0.5.0; nothing committed.
