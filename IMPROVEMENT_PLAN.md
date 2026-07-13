@@ -7,13 +7,17 @@
 ## Status snapshot
 
 - Branch `0.5.0` is **68 commits ahead of `main`, 0 behind**. Roadmap Groups **A–H merged**;
-  **G2 (community library) deferred**. Fast suite: **1025 passed, 1 skipped** (after the
-  CodeRabbit review-hardening pass — see the 2026-07-12 progress-log entry).
-- Group A–H features sit in CHANGELOG **"Unreleased"** on top of the shipped `0.5.0` panel;
-  `manifest.json` still `0.5.0` → needs a version bump before release.
-- Working tree has a **large uncommitted Playground rewrite** in `ha-washdata-panel.js`
-  (backend-complete, client-incomplete).
+  **G2 (community library) deferred**. Fast suite: **1027 passed, 1 skipped**; E2E: **208/208**
+  (all 22 playground spec failures resolved — 2026-07-13 pass).
+- Version RESOLVED: stays **0.5.0** (no bump; `manifest.json` unchanged). STORAGE_VERSION bumped
+  to **9** (additive-key init migration). CHANGELOG consolidated into `## 0.5.0`.
+- Playground: **fully complete** — PG-1/2/3/4/5/6/7/8/9/10 all done. Stage-5 group collapsing
+  in `playground.py`; E2E spec rewritten (208/208); 23 orphaned keys pruned.
+- Phase 2 UI hardening: all medium/larger items done **except** `<ha-icon>` unification (deferred).
+  ARIA tab-widget, button-cards, error states, `--wd-*` tokens all landed.
+- Phase 4 correctness: ENDING energy gate fixed; storage v9 done. Only cosmetic smells remain.
 - Release gated by issue **#300** ("DO NOT SUBMIT ISSUES OR PRs UNTIL 0.5.0 RELEASE").
+- All work is uncommitted (working tree, branch `0.5.0`); nothing committed per the maintainer's request.
 
 Verify gate after every phase:
 ```bash
@@ -66,12 +70,18 @@ python3 -m compileall custom_components/ha_washdata -q
       collision + the wrong `_redrawCanvas` dispatch on Playground hover).
 - [x] **PG-6 (LOW-MED)** — Sweep now merges dragged thresholds into the override (like sim).
 - [x] **PG-8 (LOW)** — Sweep loop checks `_pgSimCancelled`; Cancel works.
-- [ ] **PG-2 (HIGH)** — Rewrite `playwright-tests/tests/playground.spec.ts` against the new
-      single-canvas DOM. Run `--e2e` green.
-- [ ] **PG-9 (LOW)** — Prune ~50 orphaned old Playground translation keys + update CHANGELOG.
-      _DEFERRED until translation agents finish (they edit the same lang files)._
-- [ ] **PG-10 (LOW)** — Backend replay skips Stage-5 group collapsing. `playground.py:143`.
-      Apply Stage-5 or label as a simplification.
+- [x] **PG-2 (HIGH)** — Rewrote `playwright-tests/tests/playground.spec.ts` against the new
+      single-canvas DOM. 13 new tests cover the real DOM (cycle/profile selectors, canvas,
+      strip, param inputs, run-sim WS assertion, sweep controls, sweep chart); 3 passing WS-assertion
+      and mobile-overflow tests kept as-is. E2E suite: **208/208** (was 186/208; 22 failures resolved).
+- [x] **PG-9 (LOW)** — Pruned 23 orphaned old-design keys (e.g. `lbl.pg_ev_off/paused/start/match`,
+      `msg.pg_tip_*`, `msg.pg_ab_intro`, `toast.pg_sim_failed`) across all 35 language files;
+      `pg_desc.*` (dynamically referenced) and `lbl.pg_ev_running/ending` (used in strip/chart) kept.
+      Bundle rebuilt (~935 EN keys).
+- [x] **PG-10 (LOW)** — Implemented Stage-5 group collapsing in `playground.py`. `_build_match_snapshots`
+      now calls `store._grouped_snapshots()` and returns a 4-tuple; `_simulate_one` resolves any
+      `__group__*` winner via `store._stage5_pick_member()` before logging/ambiguity checks. Falls
+      back silently when no cohesive groups exist (behaviour byte-identical to before).
 
 ## Phase 2 — UI hardening (accessibility + design tokens)
 
@@ -84,19 +94,41 @@ Quick wins:
 - [x] `role="img"` + localized `aria-label` on all 9 canvases (8 aria keys added to en.json).
 - [x] Fixed `${color}22` alpha-append bug (invalid CSS for `var()` colors) at the status badge
       **and** the profile-health banner border — both now use `color-mix()`.
-- [ ] Localize stray `Loading…` literals (`panel.js` ~2267,2326,5667). _Remaining (minor)._
+- [x] Localize stray `Loading…` literals — DONE. Every loading string now routes through
+      `_t()` (`msg.loading` / `msg.loading_settings` / `msg.ml_loading`); the last raw literal
+      ("Loading diagnostics…" in the diagnostics stats pane) now uses `_t('msg.loading', …)`.
 
-Medium (remaining):
-- [ ] Introduce a `--wd-*` token layer (radius/space/type/accent-tint) in `:host`; refactor
-      raw `rgba()` tints, 15× `#fff`, and the 4 divergent stat font-sizes onto it.
-- [ ] Make clickable div-cards real `<button>`s with keyboard support (`panel.js` ~2830, 2394).
-- [ ] Distinct **error state** + retry for background fetches (`catch(()=>{})` → empty==error).
-- [ ] Unify iconography on `<ha-icon>` MDI (card is the reference).
+Medium:
+- [x] Introduce a `--wd-*` token layer in `:host`. DONE — 14 tokens added (`--wd-radius-sm/md/lg`,
+      `--wd-space-xs/sm/md/lg/xl`, `--wd-font-sm/xs`, `--wd-white`, `--wd-tint-xs/sm/md`); 27
+      border-radius replacements + 14 `#fff`→`var(--wd-white)` replacements in CSS. Remaining
+      `rgba()` tints and one-off values are a lower-priority follow-up.
+- [x] Make clickable div-cards real `<button>`s with keyboard support. DONE — 5 attention cards
+      (`goto-feedbacks`, `goto-conflicts`, `goto-suggestions`, `open-advanced`×2) and the profile
+      card converted from `<div data-action>` to `<button type="button" data-action>`; CSS reset
+      applied (`appearance:none; font:inherit; text-align:left; width:100%`). Info-only cards
+      without `data-action` left as `<div>`.
+- [x] Error state + retry for background WS fetches. DONE — `_fetchCycles`, `_fetchSuggestions`,
+      `_fetchProfiles`, `_fetchProfileGroups` each set a `_*Error` flag in catch; the respective
+      render methods (`_htmlHistory`, `_htmlSettings`, `_htmlProfiles`) prepend a `.wd-error-state`
+      banner with a Retry button (`data-action="retry-*"`) handled in `_onAction`. Envelopes
+      remain silent-fallback (low impact).
+- [ ] Unify iconography on `<ha-icon>` MDI (card is the reference). _NOT-DONE — 0 `<ha-icon>` usages;
+      icons are a mix of emoji (💡🤖🧺⚙️…), inline `<svg>`, and unicode glyphs. Deferred — most
+      invasive remaining aesthetic item, lowest functional impact._
 
-Larger (remaining):
-- [ ] Full modal focus management (move-in + trap + restore) as a shared helper + `aria-labelledby`.
-- [ ] ARIA tab-widget semantics (`role="tablist"/"tab"/"tabpanel"`, arrow-key nav).
-- [ ] WCAG pass across the panel.
+Larger:
+- [x] Full modal focus management — DONE. Shared `_syncModalFocus(prevFocus)` helper: focus
+      move-in on open, Tab/Shift-Tab TRAP + Escape-close in `_onKeydown` over `_focusableEls`,
+      and focus RESTORE to the captured trigger (`_modalReturnFocus`) on close; every modal shell
+      has `role="dialog" aria-modal="true" aria-labelledby` + a title id.
+- [x] ARIA tab-widget semantics — DONE. `role="tablist"` on `.wd-tabs` container; `role="tab"`,
+      `aria-selected`, roving `tabindex` on each `.wd-tab` button; `role="tabpanel"` +
+      `aria-labelledby` on each `.wd-pane`. Arrow-key nav (Left/Right/Home/End) in `_onKeydown`
+      wraps through tabs and fires `click()`+`focus()`.
+- [ ] WCAG pass across the panel. _PARTIAL — focus-visible, modal focus mgmt, toast live regions,
+      ARIA tab-widget, ~25 aria-labels + role=img, button-cards, `--wd-*` tokens all done; remaining
+      gaps: `<ha-icon>` unification, `rgba()` contrast audit, no formal WCAG conformance test._
 
 ## Phase 3 — ML correctness
 
@@ -109,9 +141,11 @@ Larger (remaining):
       `cycle_id`. 3 regression tests added; dependent tests updated to the 4-tuple API.
 - [x] Added `kind` guard to `resolve_scorer` (won't sigmoid a `standardized_linear` spec);
       fixed `resolve_regressor` docstring (now names `total_energy` too).
-- [ ] Confirm `match_progress_top1` ≡ `duration_ratio_top1` duplication vs the lab column
-      defs (`ml/feature_extraction.py:243,249`). _Deferred — needs the ml_washdata lab; note
-      as a low-priority parity check._
+- [x] Confirm `match_progress_top1` ≡ `duration_ratio_top1` duplication vs the lab column defs
+      — CONFIRMED parity. Both compute `float(min(progress, 2.0))` in the integration
+      (`ml/feature_extraction.py:243,249`) AND the lab (`ml_washdata/wash_ml/live_matching.py:353,359`);
+      the duplication is intentional (two independent feature slots the model weights separately)
+      and byte-identical lab↔integration, so there is nothing to reconcile.
 
 ## Phase 4 — Low-severity correctness + roadmap forward
 
@@ -124,11 +158,14 @@ Larger (remaining):
       routes through `route_conf` (preserves the real match confidence, handles an inverted
       `learning_conf >= auto_label_conf` config) so a sub-warmup profile always requests manual
       confirmation and never silently skips. Regression tests: `tests/test_warmup_gate.py` (4).
-- [ ] Smells: `manager.py` misleading "snapshot" comment; ENDING energy gate missing
-      `max_gap_s` (`cycle_detector.py:~1270`); non-monotonic linear-fallback progress.
-      _Remaining (cosmetic/fragile-but-correct)._
-- [ ] Optional storage **v9** bump to init additive keys (`lifetime_energy_wh`,
-      `settings_changelog`, `maintenance_log`).
+- [x] Smells (actionable): ENDING energy gate now passes `max_gap_s=energy_gap_threshold_s(recent_ts)`
+      to `integrate_wh` at `cycle_detector.py` (prevents energy inflation across a sensor outage
+      in the ENDING window). `energy_gap_threshold_s` added to signal_processing import.
+      Remaining cosmetic smells: `manager.py` "snapshot" comment; non-monotonic linear-fallback
+      progress — both unchanged (correct, not worth detection-adjacent churn).
+- [x] Storage **v9** bump — DONE. `STORAGE_VERSION` bumped to 9 (`const.py`). Migration step
+      initialises `lifetime_energy_wh=0.0`, `settings_changelog=[]`, `maintenance_log=[]` via
+      `setdefault` (idempotent). Two new regression tests in `test_migration_v032.py`.
 - [ ] **Suggestion-scan snapshot (CR iter7 #4, DEFERRED)** — `learning._dispatch_scan_and_apply`
       offloads the suggestion generators to an executor thread where they read the store's
       **live** `get_profiles()` dict (cycle access is already `[-N:]`-sliced, so append-safe).
@@ -197,3 +234,16 @@ Roadmap forward (post-release, per open GitHub issues):
   `ml_washdata` lab A/B; generated model files needing lab regeneration). **Gate green: fast
   suite 1025/1 skipped, ML+parity 41, slow real-data replay 28/28 (matching top-1 unchanged),
   compileall OK.** Version stays 0.5.0; nothing committed.
+- 2026-07-13 — **Completion pass: all remaining IMPROVEMENT_PLAN items (except deferred).** Parallel
+  agents landed: PG-10 (Stage-5 group collapsing in `playground.py` — `_build_match_snapshots`
+  returns 4-tuple, `_simulate_one` resolves `__group__*` winners via `_stage5_pick_member`);
+  PG-2 (playground.spec.ts fully rewritten — 13 new tests cover real DOM; E2E **208/208**, all
+  22 failures resolved); PG-9 (23 orphaned old-design keys pruned across 35 lang files, bundle
+  ~935 EN keys); Phase 4 (ENDING energy gate now passes `max_gap_s`, storage v9 with 2 regression
+  tests, `STORAGE_VERSION=9`); Phase 2 UI hardening (ARIA tab-widget: `role="tablist/tab/tabpanel"`,
+  `aria-selected`, roving tabindex, arrow-key nav; 5 attention cards + profile card converted from
+  `<div data-action>` to `<button type="button">`; error-state+retry banners for `_fetchCycles/
+  Suggestions/Profiles/ProfileGroups`; 14 `--wd-*` CSS tokens + 27 radius + 14 `#fff` replacements).
+  **Gate: fast suite 1027/1 skipped; E2E 208/208; compileall OK; node --check OK.**
+  Remaining open: `<ha-icon>` unification (deferred, aesthetic), suggestion-scan snapshot race
+  (deferred, GC-pressure), WCAG formal audit, post-release GitHub issues.
