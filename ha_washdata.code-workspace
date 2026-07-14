@@ -16,5 +16,14 @@
 			"path": "../washdata_store"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"python-envs.pythonProjects": [
+			{
+				"path": "__pycache__",
+				"envManager": "ms-python.python:venv",
+				"packageManager": "ms-python.python:pip",
+				"workspace": "washdata_store"
+			}
+		]
+	}
 }
