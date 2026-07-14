@@ -11,6 +11,9 @@
 		},
 		{
 			"path": "../ml_washdata"
+		},
+		{
+			"path": "../washdata_store"
 		}
 	],
 	"settings": {}
