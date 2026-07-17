@@ -8,7 +8,22 @@
 		},
 		{
 			"path": "../ha_integration_translator"
+		},
+		{
+			"path": "../ml_washdata"
+		},
+		{
+			"path": "../washdata_store"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"python-envs.pythonProjects": [
+			{
+				"path": "../washdata_store",
+				"envManager": "ms-python.python:venv",
+				"packageManager": "ms-python.python:pip",
+				"workspace": "washdata_store"
+			}
+		]
+	}
 }
