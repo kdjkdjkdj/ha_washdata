@@ -265,3 +265,19 @@ async def test_restoration_without_meter_key_leaves_none(
     await manager._attempt_state_restoration()
 
     assert manager._energy_counter_start_wh is None
+
+
+def test_user_schema_accepts_optional_energy_sensor() -> None:
+    from custom_components.ha_washdata.config_flow import STEP_USER_DATA_SCHEMA
+
+    base = {
+        "name": "Washer",
+        "device_type": "washing_machine",
+        "power_sensor": "sensor.p",
+        "min_power": 2.0,
+    }
+    with_sensor = STEP_USER_DATA_SCHEMA({**base, "energy_sensor": "sensor.e"})
+    assert with_sensor["energy_sensor"] == "sensor.e"
+
+    without_sensor = STEP_USER_DATA_SCHEMA(dict(base))
+    assert "energy_sensor" not in without_sensor

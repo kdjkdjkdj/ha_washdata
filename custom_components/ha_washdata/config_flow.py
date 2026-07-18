@@ -30,6 +30,7 @@ from homeassistant.helpers import selector
 from .const import (
     DOMAIN,
     CONF_POWER_SENSOR,
+    CONF_ENERGY_SENSOR,
     CONF_MIN_POWER,
     CONF_DEVICE_TYPE,
     DEFAULT_NAME,
@@ -72,12 +73,15 @@ def _merge_structural_options(
     data-spread bug) so they don't persist there.
     """
     preserved = {k: v for k, v in entry.options.items() if k != CONF_NAME}
-    return {
+    result = {
         **preserved,
         CONF_DEVICE_TYPE: user_input[CONF_DEVICE_TYPE],
         CONF_POWER_SENSOR: user_input[CONF_POWER_SENSOR],
         CONF_MIN_POWER: user_input[CONF_MIN_POWER],
     }
+    if CONF_ENERGY_SENSOR in user_input:
+        result[CONF_ENERGY_SENSOR] = user_input[CONF_ENERGY_SENSOR] or None
+    return result
 
 
 def _structural_schema(entry: config_entries.ConfigEntry) -> vol.Schema:
@@ -115,6 +119,12 @@ def _structural_schema(entry: config_entries.ConfigEntry) -> vol.Schema:
                 selector.EntitySelectorConfig(domain="sensor"),
             ),
             vol.Optional(
+                CONF_ENERGY_SENSOR,
+                default=_resolve_options_first(entry, CONF_ENERGY_SENSOR, ""),
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor"),
+            ),
+            vol.Optional(
                 CONF_MIN_POWER,
                 default=_resolve_options_first(entry, CONF_MIN_POWER, DEFAULT_MIN_POWER),
             ): vol.Coerce(float),
@@ -136,6 +146,9 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
             )
         ),
         vol.Required(CONF_POWER_SENSOR): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor"),
+        ),
+        vol.Optional(CONF_ENERGY_SENSOR): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor"),
         ),
         vol.Optional(CONF_MIN_POWER, default=DEFAULT_MIN_POWER): vol.Coerce(float),
