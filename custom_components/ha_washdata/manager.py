@@ -42,7 +42,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.const import STATE_UNAVAILABLE, STATE_HOME
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN, STATE_HOME, UnitOfEnergy
 from homeassistant.util import dt as dt_util
 import homeassistant.helpers.event as evt
 from homeassistant.helpers import script as script_helper
@@ -51,6 +51,7 @@ from homeassistant.helpers import translation
 from .const import (
     DOMAIN,
     CONF_POWER_SENSOR,
+    CONF_ENERGY_SENSOR,
     CONF_MIN_POWER,
     CONF_OFF_DELAY,
     CONF_NOTIFY_SERVICE,
@@ -371,6 +372,12 @@ class WashDataManager:
         self.power_sensor_entity_id = config_entry.options.get(
             CONF_POWER_SENSOR, config_entry.data.get(CONF_POWER_SENSOR)
         )
+        # Native energy meter snapshot taken at cycle start (Wh); None = no
+        # snapshot (feature unconfigured, meter unreadable, or no active cycle).
+        self._energy_counter_start_wh: float | None = None
+        # Entity id the snapshot was read from, so a mid-cycle meter swap
+        # doesn't produce a cross-meter delta at cycle end.
+        self._energy_snapshot_entity_id: str | None = None
         self.device_type = config_entry.options.get(
             CONF_DEVICE_TYPE,
             config_entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE),
@@ -3416,6 +3423,74 @@ class WashDataManager:
             self._notify_update()
             return
 
+
+    _ENERGY_UNIT_TO_WH = {
+        UnitOfEnergy.WATT_HOUR: 1.0,
+        UnitOfEnergy.KILO_WATT_HOUR: 1000.0,
+        UnitOfEnergy.MEGA_WATT_HOUR: 1_000_000.0,
+    }
+
+    @property
+    def energy_sensor_entity_id(self) -> str | None:
+        """Return the configured cumulative energy meter entity, if any."""
+        return self.config_entry.options.get(
+            CONF_ENERGY_SENSOR, self.config_entry.data.get(CONF_ENERGY_SENSOR)
+        )
+
+    def _read_energy_counter_wh(self) -> float | None:
+        """Read the configured energy meter, normalized to Wh; None on any doubt."""
+        entity_id = self.energy_sensor_entity_id
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            self._logger.debug("Energy sensor %s is unavailable", entity_id)
+            return None
+        unit = state.attributes.get("unit_of_measurement")
+        factor = self._ENERGY_UNIT_TO_WH.get(unit)
+        if factor is None:
+            self._logger.debug(
+                "Energy sensor %s has unsupported unit %r", entity_id, unit
+            )
+            return None
+        try:
+            return float(state.state) * factor
+        except (TypeError, ValueError):
+            self._logger.debug(
+                "Energy sensor %s has non-numeric state %r", entity_id, state.state
+            )
+            return None
+
+    def _compute_meter_energy_wh(
+        self, start_wh: float | None, snapshot_entity_id: str | None = None
+    ) -> float | None:
+        """Return cycle energy from the native meter delta, or None to fall back."""
+        if start_wh is None:
+            return None
+        current_entity_id = self.energy_sensor_entity_id
+        if snapshot_entity_id is not None and current_entity_id != snapshot_entity_id:
+            self._logger.info(
+                "Energy sensor changed during cycle (%s -> %s); using integrated energy",
+                snapshot_entity_id,
+                current_entity_id,
+            )
+            return None
+        end_wh = self._read_energy_counter_wh()
+        if end_wh is None:
+            self._logger.debug(
+                "Energy meter unreadable at cycle end; using integrated energy"
+            )
+            return None
+        delta_wh = end_wh - start_wh
+        if delta_wh < 0:
+            self._logger.info(
+                "Energy meter went backwards during cycle (%.3f -> %.3f Wh); "
+                "meter reset assumed, using integrated energy",
+                start_wh,
+                end_wh,
+            )
+            return None
+        return delta_wh
 
     def _on_state_change(self, old_state: str, new_state: str) -> None:
         """Handle state change from detector."""
