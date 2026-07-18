@@ -1626,6 +1626,14 @@ class WashDataManager:
                     self._total_user_paused_seconds = float(
                         active_snapshot_to_restore.get("total_user_paused_seconds", 0.0)
                     )
+                    _meter_raw = active_snapshot_to_restore.get("energy_counter_start_wh")
+                    self._energy_counter_start_wh = (
+                        float(_meter_raw) if isinstance(_meter_raw, (int, float)) else None
+                    )
+                    _ent_raw = active_snapshot_to_restore.get("energy_snapshot_entity_id")
+                    self._energy_snapshot_entity_id = (
+                        _ent_raw if isinstance(_ent_raw, str) else None
+                    )
                     # get_state_snapshot() does not persist the detector's
                     # verified-pause flag, so a user-paused cycle would otherwise be
                     # finalized on the first ENDING timeout after a restart (issue
@@ -2278,14 +2286,7 @@ class WashDataManager:
         # Save active state before shutdown
         if self.detector.state in {STATE_RUNNING, STATE_PAUSED, STATE_STARTING, STATE_ENDING}:
             snapshot = self.detector.get_state_snapshot()
-            snapshot["manual_program"] = self._manual_program_active
-            snapshot["notified_start"] = self._notified_start
-            snapshot["start_event_fired"] = self._start_event_fired
-            snapshot["is_user_paused"] = self._is_user_paused
-            snapshot["user_pause_start"] = (
-                self._user_pause_start.isoformat() if self._user_pause_start else None
-            )
-            snapshot["total_user_paused_seconds"] = self._total_user_paused_seconds
+            snapshot = self._enrich_state_snapshot(snapshot)
             await self.profile_store.async_save_active_cycle(snapshot)
 
         self._last_reading_time = None
@@ -2837,14 +2838,7 @@ class WashDataManager:
             # Fire and forget save task
             # Inject manual program flag into snapshot before saving
             snapshot = self.detector.get_state_snapshot()
-            snapshot["manual_program"] = self._manual_program_active
-            snapshot["notified_start"] = self._notified_start
-            snapshot["start_event_fired"] = self._start_event_fired
-            snapshot["is_user_paused"] = self._is_user_paused
-            snapshot["user_pause_start"] = (
-                self._user_pause_start.isoformat() if self._user_pause_start else None
-            )
-            snapshot["total_user_paused_seconds"] = self._total_user_paused_seconds
+            snapshot = self._enrich_state_snapshot(snapshot)
 
             self.hass.async_create_task(
                 self.profile_store.async_save_active_cycle(snapshot)
@@ -3491,6 +3485,20 @@ class WashDataManager:
             )
             return None
         return delta_wh
+
+    def _enrich_state_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any]:
+        """Add manager-side state to a detector snapshot before persisting."""
+        snapshot["manual_program"] = self._manual_program_active
+        snapshot["notified_start"] = self._notified_start
+        snapshot["start_event_fired"] = self._start_event_fired
+        snapshot["is_user_paused"] = self._is_user_paused
+        snapshot["user_pause_start"] = (
+            self._user_pause_start.isoformat() if self._user_pause_start else None
+        )
+        snapshot["total_user_paused_seconds"] = self._total_user_paused_seconds
+        snapshot["energy_counter_start_wh"] = self._energy_counter_start_wh
+        snapshot["energy_snapshot_entity_id"] = self._energy_snapshot_entity_id
+        return snapshot
 
     def _on_state_change(self, old_state: str, new_state: str) -> None:
         """Handle state change from detector."""
@@ -6233,14 +6241,7 @@ class WashDataManager:
                     return False
 
         snapshot = self.detector.get_state_snapshot()
-        snapshot["manual_program"] = self._manual_program_active
-        snapshot["notified_start"] = self._notified_start
-        snapshot["start_event_fired"] = self._start_event_fired
-        snapshot["is_user_paused"] = self._is_user_paused
-        snapshot["user_pause_start"] = (
-            self._user_pause_start.isoformat() if self._user_pause_start else None
-        )
-        snapshot["total_user_paused_seconds"] = self._total_user_paused_seconds
+        snapshot = self._enrich_state_snapshot(snapshot)
         self.hass.async_create_task(self.profile_store.async_save_active_cycle(snapshot))
         self._notify_update()
         return True
@@ -6301,14 +6302,7 @@ class WashDataManager:
         self._clear_timer_pause_notification()
 
         snapshot = self.detector.get_state_snapshot()
-        snapshot["manual_program"] = self._manual_program_active
-        snapshot["notified_start"] = self._notified_start
-        snapshot["start_event_fired"] = self._start_event_fired
-        snapshot["is_user_paused"] = self._is_user_paused
-        snapshot["user_pause_start"] = (
-            self._user_pause_start.isoformat() if self._user_pause_start else None
-        )
-        snapshot["total_user_paused_seconds"] = self._total_user_paused_seconds
+        snapshot = self._enrich_state_snapshot(snapshot)
         self.hass.async_create_task(self.profile_store.async_save_active_cycle(snapshot))
         self._notify_update()
         return True
