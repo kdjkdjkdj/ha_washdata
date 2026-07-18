@@ -79,8 +79,10 @@ def _merge_structural_options(
         CONF_POWER_SENSOR: user_input[CONF_POWER_SENSOR],
         CONF_MIN_POWER: user_input[CONF_MIN_POWER],
     }
-    if CONF_ENERGY_SENSOR in user_input:
-        result[CONF_ENERGY_SENSOR] = user_input[CONF_ENERGY_SENSOR] or None
+    # Optional field: an emptied selector is omitted from the submission (it uses
+    # suggested_value, not default), so read it unconditionally -- an absent or
+    # empty value becomes None so the meter can actually be cleared.
+    result[CONF_ENERGY_SENSOR] = user_input.get(CONF_ENERGY_SENSOR) or None
     return result
 
 
@@ -120,7 +122,11 @@ def _structural_schema(entry: config_entries.ConfigEntry) -> vol.Schema:
             ),
             vol.Optional(
                 CONF_ENERGY_SENSOR,
-                default=_resolve_options_first(entry, CONF_ENERGY_SENSOR, ""),
+                description={
+                    "suggested_value": _resolve_options_first(
+                        entry, CONF_ENERGY_SENSOR, None
+                    )
+                },
             ): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="sensor"),
             ),

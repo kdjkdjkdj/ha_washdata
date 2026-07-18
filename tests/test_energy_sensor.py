@@ -289,3 +289,107 @@ def test_diagnostics_redacts_energy_sensor() -> None:
     redacted = _redact({"energy_sensor": "sensor.wm_energy", "min_power": 2})
     assert redacted["energy_sensor"] == "**REDACTED**"
     assert redacted["min_power"] == 2
+
+
+async def test_read_energy_counter_unknown_returns_none(
+    hass: HomeAssistant, manager: WashDataManager
+) -> None:
+    hass.states.async_set(ENERGY_SENSOR, "unknown", {"unit_of_measurement": "kWh"})
+    assert manager._read_energy_counter_wh() is None
+
+
+async def test_read_energy_counter_non_finite_returns_none(
+    hass: HomeAssistant, manager: WashDataManager
+) -> None:
+    hass.states.async_set(ENERGY_SENSOR, "nan", {"unit_of_measurement": "kWh"})
+    assert manager._read_energy_counter_wh() is None
+    hass.states.async_set(ENERGY_SENSOR, "inf", {"unit_of_measurement": "kWh"})
+    assert manager._read_energy_counter_wh() is None
+
+
+async def test_cycle_end_meter_delta_with_matching_snapshot_entity(
+    hass: HomeAssistant, manager: WashDataManager
+) -> None:
+    """Happy path with the snapshot entity set and matching the configured one."""
+    manager._async_process_cycle_end = AsyncMock()
+    manager._energy_counter_start_wh = 353087.0
+    manager._energy_snapshot_entity_id = ENERGY_SENSOR
+    hass.states.async_set(ENERGY_SENSOR, "353.527", {"unit_of_measurement": "kWh"})
+    cycle_data = _cycle_data()
+
+    manager._on_cycle_end(cycle_data)
+    await hass.async_block_till_done()
+
+    assert cycle_data["energy_wh"] == pytest.approx(440.0)
+    assert cycle_data["energy_source"] == "meter"
+
+
+async def test_cycle_end_flat_meter_falls_back_to_integration(
+    hass: HomeAssistant, manager: WashDataManager
+) -> None:
+    """A meter that did not advance (delta == 0) must not store 0 Wh as 'meter'."""
+    manager._async_process_cycle_end = AsyncMock()
+    manager._energy_counter_start_wh = 353527.0  # equal to the end reading -> delta 0
+    hass.states.async_set(ENERGY_SENSOR, "353.527", {"unit_of_measurement": "kWh"})
+    cycle_data = _cycle_data()
+
+    manager._on_cycle_end(cycle_data)
+    await hass.async_block_till_done()
+
+    assert cycle_data["energy_wh"] == pytest.approx(100.0)
+    assert cycle_data["energy_source"] == "integration"
+
+
+async def test_cycle_end_unconfigured_marks_integration(
+    hass: HomeAssistant, mock_entry: Any
+) -> None:
+    """With no meter configured, energy stays integrated and is labelled as such."""
+    mock_entry.options = {"power_sensor": "sensor.test_power"}
+    mgr = _build_manager(hass, mock_entry)
+    mgr._async_process_cycle_end = AsyncMock()
+    cycle_data = _cycle_data()
+
+    mgr._on_cycle_end(cycle_data)
+    await hass.async_block_till_done()
+
+    assert cycle_data["energy_wh"] == pytest.approx(100.0)
+    assert cycle_data["energy_source"] == "integration"
+
+
+def test_merge_structural_options_persists_energy_sensor() -> None:
+    from custom_components.ha_washdata.config_flow import _merge_structural_options
+
+    entry = MagicMock()
+    entry.options = {
+        "power_sensor": "sensor.p",
+        "device_type": "washing_machine",
+        "min_power": 2.0,
+    }
+    user_input = {
+        "device_type": "washing_machine",
+        "power_sensor": "sensor.p",
+        "min_power": 2.0,
+        "energy_sensor": "sensor.e",
+    }
+    result = _merge_structural_options(entry, user_input)
+    assert result["energy_sensor"] == "sensor.e"
+
+
+def test_merge_structural_options_clears_energy_sensor() -> None:
+    """An emptied selector is omitted from the submit; the meter must be cleared."""
+    from custom_components.ha_washdata.config_flow import _merge_structural_options
+
+    entry = MagicMock()
+    entry.options = {
+        "power_sensor": "sensor.p",
+        "energy_sensor": "sensor.e",
+        "device_type": "washing_machine",
+        "min_power": 2.0,
+    }
+    user_input = {
+        "device_type": "washing_machine",
+        "power_sensor": "sensor.p",
+        "min_power": 2.0,
+    }
+    result = _merge_structural_options(entry, user_input)
+    assert result["energy_sensor"] is None

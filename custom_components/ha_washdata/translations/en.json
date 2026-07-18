@@ -8,12 +8,14 @@
           "name": "Device Name",
           "device_type": "Device Type",
           "power_sensor": "Power Sensor",
+          "energy_sensor": "Energy Sensor (Optional)",
           "min_power": "Minimum Power Threshold (W)"
         },
         "data_description": {
           "name": "A friendly name for this device (e.g., 'Washing Machine', 'Dishwasher').",
           "device_type": "What type of appliance is this? Helps tailor detection and labeling.",
           "power_sensor": "The sensor entity that reports real-time power consumption (in watts) from your smart plug.",
+          "energy_sensor": "Optional cumulative energy meter (Wh, kWh or MWh) from your smart plug. When set, each cycle's energy is taken from the meter's start-to-end delta instead of integrating the power readings - more accurate on plugs that only report power on change. Leave empty to use the built-in integrated estimate.",
           "min_power": "Power readings above this threshold (in watts) indicate the appliance is running. Start with 2W for most devices."
         }
       },
@@ -27,11 +29,12 @@
       },
       "reconfigure": {
         "title": "Reconfigure WashData",
-        "description": "Update the device name, appliance type, or power sensor.",
+        "description": "Update the device name, appliance type, power sensor, or optional energy sensor.",
         "data": {
           "name": "Device Name",
           "device_type": "Device Type",
           "power_sensor": "Power Sensor",
+          "energy_sensor": "Energy Sensor (Optional)",
           "min_power": "Minimum Power Threshold (W)"
         }
       }
@@ -56,6 +59,7 @@
           "name": "Device Name",
           "device_type": "Device Type",
           "power_sensor": "Power Sensor",
+          "energy_sensor": "Energy Sensor (Optional)",
           "min_power": "Minimum Power Threshold (W)"
         }
       }

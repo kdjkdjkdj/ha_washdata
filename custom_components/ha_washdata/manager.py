@@ -42,7 +42,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN, STATE_HOME, UnitOfEnergy
+from homeassistant.const import STATE_UNAVAILABLE, STATE_HOME, UnitOfEnergy
 from homeassistant.util import dt as dt_util
 import homeassistant.helpers.event as evt
 from homeassistant.helpers import script as script_helper
@@ -3448,12 +3448,18 @@ class WashDataManager:
             )
             return None
         try:
-            return float(state.state) * factor
+            value_wh = float(state.state) * factor
         except (TypeError, ValueError):
             self._logger.debug(
                 "Energy sensor %s has non-numeric state %r", entity_id, state.state
             )
             return None
+        if not math.isfinite(value_wh):
+            self._logger.debug(
+                "Energy sensor %s reported a non-finite value %r", entity_id, state.state
+            )
+            return None
+        return value_wh
 
     def _compute_meter_energy_wh(
         self, start_wh: float | None, snapshot_entity_id: str | None = None
@@ -3476,10 +3482,13 @@ class WashDataManager:
             )
             return None
         delta_wh = end_wh - start_wh
-        if delta_wh < 0:
+        if delta_wh <= 0:
+            # A real cycle always consumes energy, so a non-positive delta means
+            # the meter reset (delta < 0) or did not advance at all (a coarse or
+            # stuck meter); the integrated value is more trustworthy in both cases.
             self._logger.info(
-                "Energy meter went backwards during cycle (%.3f -> %.3f Wh); "
-                "meter reset assumed, using integrated energy",
+                "Energy meter did not advance during cycle (%.3f -> %.3f Wh); "
+                "using integrated energy",
                 start_wh,
                 end_wh,
             )
@@ -3544,6 +3553,9 @@ class WashDataManager:
                 self._start_event_fired = False
                 self._last_cycle_post_anomaly = {}  # Clear previous cycle's anomaly cache
                 self._cycle_start_time = self.detector.current_cycle_start or dt_util.now()
+                # Snapshot the meter on the RUNNING transition. The brief STARTING
+                # window is intentionally excluded; this errs conservative
+                # (slightly undercounts) rather than risking a cross-state baseline.
                 self._energy_counter_start_wh = self._read_energy_counter_wh()
                 self._energy_snapshot_entity_id = (
                     self.energy_sensor_entity_id
