@@ -68,8 +68,9 @@ Follow these steps to get accurate results quickly.
 2. **Name**: Name your appliance (e.g., "Washing Machine").
 3. **Device Type**: Select the type (Washer, Dryer, etc.) - this sets smart defaults for the internal logic.
 4. **Power Sensor**: Select your smart plug's power entity (Watts). *Note: The system is now optimized for polling intervals of 30-60 seconds (defaults adjusted automatically).*
-5. **Minimum Power (Optional)**: The standby threshold in Watts below which the appliance counts as off (default 2 W). Leave it unless your plug reports a high phantom load.
-6. **Initial Profile (Optional)**: A second step lets you pre-create one profile - give it a name (e.g. "Cotton") and an approximate duration in minutes. Skip it and add profiles later from the panel.
+5. **Energy Sensor (Optional)**: Select your smart plug's *cumulative* energy entity (Wh / kWh / MWh) if it exposes one. When set, each cycle's energy is taken from the meter's start→end delta instead of integrating the reported power samples - more accurate on plugs that only report power *on change* (which otherwise under-counts energy). Leave it empty to keep the built-in integrated estimate. It falls back to the integrated value automatically if the meter is unavailable, non-numeric, resets (delta < 0), or is changed mid-cycle, so it can never make a cycle's energy worse than the default. Each stored cycle records which source was used via an `energy_source` field (`meter` or `integration`).
+6. **Minimum Power (Optional)**: The standby threshold in Watts below which the appliance counts as off (default 2 W). Leave it unless your plug reports a high phantom load.
+7. **Initial Profile (Optional)**: A second step lets you pre-create one profile - give it a name (e.g. "Cotton") and an approximate duration in minutes. Skip it and add profiles later from the panel.
 
 > **Then open the WashData panel.** After setup, a **WashData** entry appears in the Home Assistant **sidebar** - that panel is where you do everything: **Overview** (live status + manual recording), **Cycles**, **Profiles**, **Settings**, **ML Training**, and **Advanced**. The integration's **Configure** dialog now keeps only three essentials (device type, power sensor, minimum power); every other setting and action moved into the panel.
 
