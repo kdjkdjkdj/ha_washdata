@@ -3536,6 +3536,12 @@ class WashDataManager:
                 self._start_event_fired = False
                 self._last_cycle_post_anomaly = {}  # Clear previous cycle's anomaly cache
                 self._cycle_start_time = self.detector.current_cycle_start or dt_util.now()
+                self._energy_counter_start_wh = self._read_energy_counter_wh()
+                self._energy_snapshot_entity_id = (
+                    self.energy_sensor_entity_id
+                    if self._energy_counter_start_wh is not None
+                    else None
+                )
                 self._ranking_snapshot_cycle_id = str(uuid.uuid4())
                 self._reset_live_notification_state()
 
@@ -3606,6 +3612,8 @@ class WashDataManager:
         if new_state == STATE_OFF:
             self._stop_watchdog()  # Stop watchdog regardless of previous state
             self._cycle_start_time = None
+            self._energy_counter_start_wh = None
+            self._energy_snapshot_entity_id = None
 
         self._notify_update()
 
@@ -3630,6 +3638,13 @@ class WashDataManager:
         """Handle cycle end - clear all active timers and state."""
         duration = cycle_data["duration"]
         max_power = cycle_data.get("max_power", 0)
+
+        # Consume the meter start snapshot up front so every exit path
+        # (including ghost/noise cycles) clears it for the next cycle.
+        meter_start_wh = self._energy_counter_start_wh
+        meter_snapshot_entity_id = self._energy_snapshot_entity_id
+        self._energy_counter_start_wh = None
+        self._energy_snapshot_entity_id = None
 
         # IMMEDIATELY stop all active timers when cycle determined to have ended
         self._stop_watchdog()  # Stop active cycle watchdog
@@ -3695,8 +3710,15 @@ class WashDataManager:
                     self._discard_cycle_cleanup()
                     return  # Do not store this as a real cycle
 
-        # Store energy for notification and persistence (calculated above for ghost detection)
+        # Store energy for notification and persistence. The integrated value
+        # (calculated above) also feeds the ghost checks; when a native energy
+        # meter is configured and plausible, its delta wins for the stored value.
         cycle_data["energy_wh"] = round(cycle_energy_wh, 3)
+        cycle_data["energy_source"] = "integration"
+        meter_wh = self._compute_meter_energy_wh(meter_start_wh, meter_snapshot_entity_id)
+        if meter_wh is not None:
+            cycle_data["energy_wh"] = round(meter_wh, 3)
+            cycle_data["energy_source"] = "meter"
 
         # Schedule heavy post-processing asynchronously. Capture this cycle's identity
         # token so the async tail can tell if a NEW cycle started while it was awaiting
