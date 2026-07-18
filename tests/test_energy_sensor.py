@@ -281,3 +281,11 @@ def test_user_schema_accepts_optional_energy_sensor() -> None:
 
     without_sensor = STEP_USER_DATA_SCHEMA(dict(base))
     assert "energy_sensor" not in without_sensor
+
+
+def test_diagnostics_redacts_energy_sensor() -> None:
+    from custom_components.ha_washdata.diagnostics import _redact
+
+    redacted = _redact({"energy_sensor": "sensor.wm_energy", "min_power": 2})
+    assert redacted["energy_sensor"] == "**REDACTED**"
+    assert redacted["min_power"] == 2

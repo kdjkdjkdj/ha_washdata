@@ -50,6 +50,7 @@ _SENSITIVE_KEYS = {
     "notify_people",
     "notify_actions",
     "power_sensor",
+    "energy_sensor",
     "external_end_trigger",
     "door_sensor_entity",
     "switch_entity",
