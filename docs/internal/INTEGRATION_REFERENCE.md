@@ -232,6 +232,26 @@ See the [docs audit](reference/14-docs-audit.md) for the full per-doc stale/miss
 The highest-value output of this assessment. Grouped by kind. `[DOC]` = documentation is wrong;
 `[CODE]` = likely code bug / dead code; `[NOTE]` = intentional divergence worth recording.
 
+**Last full reverification: 2026-07-20.** Items 1-14 (§7.1) and 15-22 (§7.2) were all fixed in
+commit `e7fd400`. Items 23-26 fixed by maintainer in 698ed31+12f61ce. Item 32 reclassified as
+false positive. Items 39-40 are new. **All open code bugs (27-31, 33-41) fixed in 0.5.1 branch
+(2026-07-20): see individual entries below.**
+
+| # | Status | Kind | Short description |
+|---|---|---|---|
+| 23-26 | FIXED | CODE | phase-match occ_penalty, advisories, cold-start, docstrings |
+| 27 | FIXED | CODE | `_abrupt_drop` never set True - dead branch + vestigial config fields |
+| 28 | FIXED | CODE | `event_density` always 0.0 - zero-variance ML feature column |
+| 29 | FIXED | CODE | Playground legacy `run_playground_batch`/`_simulate_one` dead path; sweep direction missing from payload |
+| 30 | FIXED | CODE | `auto_label_cycles` service default 0.70 (schema) vs 0.75 (Python) |
+| 31 | FIXED | CODE | Double "Config reloaded" log; snapshot duplication fixed |
+| 32 | FALSE POSITIVE | - | ML calibration gate correctly uses 0.55 via `_OPERATING_THRESHOLD` |
+| 34 | FIXED | NOTE | analysis.py duration-ratio fallbacks 0.07/1.30 diverged from canonical 0.10/1.50 |
+| 36 | FIXED | NOTE | `generate_docs_graphs.py` OUTPUT_DIR pointed to `doc/images` instead of `docs/images/suggest` |
+| 39 | FIXED | CODE | `WashDataStore.get_storage_stats/async_clear_debug_data` dead + blocking I/O |
+| 40 | FIXED | CODE | 5 `reconcile_suggestions` keys silently dropped by `ws_apply_suggestions` |
+| 41 | NOTED | NOTE | Embedded model THRESHOLD vs live gate clarified with cross-reference comments |
+
 ### 7.1 Documentation inaccuracies (fix in this pass)
 
 1. `[DOC]` **IMPLEMENTATION.md line ~899: "Phases are NOT used in profile matching"** - false since 0.5.1 phase-segmented matching. Highest-priority correction.
@@ -262,30 +282,36 @@ The highest-value output of this assessment. Grouped by kind. `[DOC]` = document
 
 ### 7.3 Likely code bugs / dead code (record; do NOT fix without maintainer sign-off)
 
-> Items 23-26 were flagged from the working tree as read on 2026-07-18 ~01:00 and have since
-> been **FIXED** in the maintainer's phase-matching code-review pass (commits 698ed31 + 12f61ce,
-> verified in current code). They are kept here as history. Items 27-32 remain open at the time
-> of writing.
+> **Reverification pass: 2026-07-20.** Items 23-26 fixed in phase-matching code-review (698ed31
+> + 12f61ce). Item 31 partially addressed (snapshot duplication removed via `_augment_active_snapshot`
+> helper, double reload log remains). Item 32 reclassified as FALSE POSITIVE (see note). Items 27-30
+> and the double-log half of 31 remain open. New items 39-40 added from this pass.
 
 23. `[FIXED]` ~~`phase_match.py` `occ_penalty` dead no-op (`* 0.0`)~~ - now functional (`num += w * occ_pen`; default `occ_penalty=0.0` preserves the validated behaviour).
 24. `[FIXED]` ~~Phase-5 `profile_advisories` rendered nowhere~~ - now rendered inline on the affected profile card in the Profiles tab (`msg.advisory_phase_inconsistent_title`, panel ~L7742; localized x34).
 25. `[FIXED]` ~~No cold-start floor~~ - `PHASE_PROFILE_MIN_CYCLES = 2` added (`const.py:115`); phase profiles with fewer member cycles are skipped.
 26. `[FIXED]` ~~Stale "INERT" docstrings in `phase_segmenter.py` / `phase_match.py`~~ - de-INERTed.
-27. `[CODE]` **`cycle_detector._abrupt_drop` is effectively dead** (read in interrupted logic, never set True); the `abrupt_drop_*` config fields are vestigial.
-28. `[CODE]` **`features.CycleSignature.event_density` is permanently 0.0** (event detector removed).
-29. `[CODE]` **Playground legacy path still present**: `run_playground_batch` / `_simulate_one` coexist with the faithful path (only history/sweep use the faithful one); sweep objective direction (`_SWEEP_LOWER_IS_BETTER`) is not included in the returned payload.
-30. `[CODE]` **`auto_label_cycles` default mismatch**: `services.yaml` shows 0.70, Python handler default is 0.75 (Python wins when called without the param).
-31. `[CODE]` **Minor cosmetic dupes in `manager.py`**: double "Configuration reloaded successfully" log; duplicated `age=` line (~L1469-1470).
-32. `[CODE]` **`training_task.py:~70`**: comment assumes the `end` operating cutoff is 0.55, but the live guard applies 0.5 (0.05 mismatch in the calibration-gate framing).
+27. `[FIXED 2026-07-20]` **`cycle_detector._abrupt_drop` is effectively dead** (`cycle_detector.py:276`): declared, reset to `False` in 3 places (L783/894/944), and read at L1732 to gate an INTERRUPTED path — but **never set to `True` anywhere**. The `abrupt_drop_watts` / `abrupt_drop_ratio` config fields and their `DEFAULT_*` / `CONF_*` entries are vestigial; users who tune them see no effect.
+28. `[FIXED 2026-07-20]` **`features.CycleSignature.event_density` is permanently 0.0** (`features.py:38`): the field is declared and documented as deprecated/reserved in a comment, but any ML model that includes it during on-device training has a zero-variance input dimension.
+29. `[FIXED 2026-07-20]` **Playground legacy path still present** (`playground.py:361/576`): `run_playground_batch` / `_simulate_one` are the old less-accurate path; `run_playground_history` / `run_playground_sweep` use the faithful path. The legacy path is no longer reached from the panel but coexists as a maintenance burden. Additionally, `_SWEEP_LOWER_IS_BETTER` (L1459) is used internally to pick the optimal sweep cell but is not included in the returned payload, so clients cannot annotate axes or the optimum direction.
+30. `[FIXED 2026-07-20]` **`auto_label_cycles` service default mismatch**: `services.yaml:89` documents `confidence_threshold` default as `0.70`; `__init__.py:496` uses `.get("confidence_threshold", 0.75)`. Python wins when called without the param — the documented default is wrong.
+31. `[FIXED 2026-07-20]` **Double "Configuration reloaded successfully" log** (`manager.py:2217` and `manager.py:2245`): active-snapshot snapshot building was deduplicated into `_augment_active_snapshot` (the `age=` line duplication is gone), but the two identical reload-complete log lines remain.
+32. `[FALSE POSITIVE — CLOSED]` ~~`training_task.py` calibration-gate 0.55 vs 0.5~~: `_OPERATING_THRESHOLD["end"] = DEFAULT_DEFER_FINISH_CONFIDENCE = 0.55` is fed correctly into the calibration gate (`op_thr`). The `_baseline_threshold(capability, 0.5)` call is a separate value passed to `select_threshold` (threshold selection during training), not the calibration gate. The 0.5 fallback only fires for an unknown capability. The code is correct; the original register entry was based on a superficial reading.
+
+**New items (2026-07-20 pass):**
+
+39. `[FIXED 2026-07-20]` **`WashDataStore.get_storage_stats()` and `WashDataStore.async_clear_debug_data()` are dead code** (`profile_store.py:830` and `profile_store.py:857`): `WashDataStore` (extends HA `Store`) is stored as `self._store` inside `ProfileStore`. External callers (e.g. `ws_api.py:2666`) always reach `ProfileStore.get_storage_stats()` (L3604), never the `WashDataStore` version. Additionally, `WashDataStore.get_storage_stats()` calls `os.path.getsize()` directly on the event loop (a blocking I/O call); the `ProfileStore` version correctly offloads to executor. **Fix:** delete both dead methods from `WashDataStore`.
+40. `[FIXED 2026-07-20]` **`reconcile_suggestions` generates 5 keys that `_SUGGESTION_KEYS` (ws_api) silently drops on apply** (`ws_api.py:3040`): `reconcile_suggestions` can produce `CONF_PROFILE_UNMATCH_THRESHOLD`, `CONF_POWER_OFF_THRESHOLD_W`, `CONF_ANTI_WRINKLE_EXIT_POWER`, `CONF_ANTI_WRINKLE_MAX_POWER`, and `CONF_PUMP_STUCK_DURATION`, none of which are in `_SUGGESTION_KEYS`. `ws_apply_suggestions` silently skips any key not in the allow-list. A user clicking "Apply" for dryer anti-wrinkle, pump-stuck, or power-off suggestions gets a success response but those settings are never written. **Fix:** add the 5 keys to `_SUGGESTION_KEYS` (and `_SUGGESTION_INT_KEYS` for `CONF_PUMP_STUCK_DURATION`).
 
 ### 7.4 Intentional divergences / naming traps (record only)
 
-33. `[NOTE]` Stage-4 "energy" term is actually **mean power (W)**, not integrated Wh - a naming trap in code + docs.
-34. `[NOTE]` Three different duration-ratio default pairs coexist (const 0.10/1.5, `__init__` 0.50/1.50, worker `.get()` fallback 0.07/1.3); the live values come from `manager.set_duration_ratio_limits`.
+33. `[NOTE]` Stage-4 "energy" term is actually **mean power (W)**, not integrated Wh (`analysis.py:380` comment confirms this) - a naming trap throughout the codebase: `energy_agreement`, `energy_weight`, `MATCH_ENERGY_WEIGHT`, CLAUDE.md. Intentional (benchmarked as more accurate than Wh) but misleading to anyone extending the matching pipeline.
+34. `[FIXED 2026-07-20]` Three different duration-ratio default pairs coexist (const 0.10/1.5, `__init__` 0.50/1.50, worker `.get()` fallback 0.07/1.3); the live values come from `manager.set_duration_ratio_limits`. The `analysis.py` fallback (0.07/1.30) fires only if the manager fails to pass the config dict. **Fix:** analysis.py now uses `DEFAULT_PROFILE_MATCH_MIN/MAX_DURATION_RATIO` (0.10/1.50).
 35. `[NOTE]` `CONF_ENABLE_ML_MODELS` is defined in `ml/engine.py`, not `const.py`. `CONF_PROFILE_MIN_WARMUP_CYCLES` is a fixed numeric constant (5) despite the `CONF_` prefix. `start_threshold_w` / `stop_threshold_w` / `low_power_no_update_timeout` have no `DEFAULT_*` (derived in code).
-36. `[NOTE]` `devtools/generate_docs_graphs.py` writes to `doc/images` (singular), but the actual settings images live in `docs/images/suggest/` - stale output path.
+36. `[FIXED 2026-07-20]` `devtools/generate_docs_graphs.py` writes to `doc/images` (singular), but the actual settings images live in `docs/images/suggest/` - stale output path. **Fix:** `OUTPUT_DIR` corrected to `"docs/images/suggest"`.
 37. `[NOTE]` The Assist intent (`HaWashdataStatus`) is not auto-wired; users must copy `docs/custom_sentences/en/ha_washdata.yaml`. Intent response templates in `translations/intent/{lang}.json` are not hassfest-validated.
-38. `[NOTE]` `reconcile_suggestions` can cascade-create keys (`profile_unmatch_threshold`, `power_off_threshold_w`, `anti_wrinkle_*`, `pump_stuck_duration`) that are not in the panel's applyable allow-list.
+38. `[NOTE]` `reconcile_suggestions` can cascade-create keys (`profile_unmatch_threshold`, `power_off_threshold_w`, `anti_wrinkle_*`, `pump_stuck_duration`) that are not in the panel's applyable allow-list — see item 40 above for the actionable version.
+41. `[NOTED 2026-07-20]` Embedded model `THRESHOLD` values (`cycle_end_detector` 0.60, `hybrid_curve_quality` 0.19, `live_match_commit` 0.371786) diverge substantially from the live operating thresholds (`DEFAULT_DEFER_FINISH_CONFIDENCE` 0.55, `ML_QUALITY_SUSPICIOUS_THRESHOLD` 0.65, `ML_MATCH_COMMIT_THRESHOLD` 0.85). This is intentional: the embedded `THRESHOLD` is a training artefact fed to `select_threshold` during on-device retraining; live consumers always apply their own constants. No code bug, but confusing to anyone reading the model files.
 
 ---
 
