@@ -237,6 +237,9 @@ commit `e7fd400`. Items 23-26 fixed by maintainer in 698ed31+12f61ce. Item 32 re
 false positive. Items 39-40 are new. **All open code bugs (27-31, 33-41) fixed in 0.5.1 branch
 (2026-07-20): see individual entries below.**
 
+**2026-07-21 additions (0.5.2 branch):** Item 27 fully closed (panel-side abrupt_drop cleanup);
+new items 42-49 added and fixed in same session.
+
 | # | Status | Kind | Short description |
 |---|---|---|---|
 | 23-26 | FIXED | CODE | phase-match occ_penalty, advisories, cold-start, docstrings |
@@ -251,6 +254,14 @@ false positive. Items 39-40 are new. **All open code bugs (27-31, 33-41) fixed i
 | 39 | FIXED | CODE | `WashDataStore.get_storage_stats/async_clear_debug_data` dead + blocking I/O |
 | 40 | FIXED | CODE | 5 `reconcile_suggestions` keys silently dropped by `ws_apply_suggestions` |
 | 41 | NOTED | NOTE | Embedded model THRESHOLD vs live gate clarified with cross-reference comments |
+| 42 | FIXED | CODE | Dead sync `match_profile()` (56 lines) removed from `profile_store.py` |
+| 43 | FIXED | CODE | ML `resolve_scorer`/`resolve_regressor` lacked schema guard for stale feature columns |
+| 44 | FIXED | CODE | 5 hardcoded English strings in panel.js now routed through `_t()` |
+| 45 | FIXED | CODE | `apply_split_interactive` used sync `add_cycle` — retention unsaved before split `async_save` |
+| 46 | FIXED | CODE | Cycle-ID 12-char SHA collision with no dedup guard in `_add_cycle_data` |
+| 47 | FIXED | NOTE | `ProfileStore` init used flat duration-ratio default, not per-device default |
+| 48 | FIXED | CODE | `_reprocess_task` cancel only honoured before ML step; 3 earlier steps unresponsive |
+| 49 | FIXED | CODE | Playground `_SIM_SERIES_THROTTLE_S=5.0` equalled cadence; throttle was a no-op |
 
 ### 7.1 Documentation inaccuracies (fix in this pass)
 
@@ -291,7 +302,7 @@ false positive. Items 39-40 are new. **All open code bugs (27-31, 33-41) fixed i
 24. `[FIXED]` ~~Phase-5 `profile_advisories` rendered nowhere~~ - now rendered inline on the affected profile card in the Profiles tab (`msg.advisory_phase_inconsistent_title`, panel ~L7742; localized x34).
 25. `[FIXED]` ~~No cold-start floor~~ - `PHASE_PROFILE_MIN_CYCLES = 2` added (`const.py:115`); phase profiles with fewer member cycles are skipped.
 26. `[FIXED]` ~~Stale "INERT" docstrings in `phase_segmenter.py` / `phase_match.py`~~ - de-INERTed.
-27. `[FIXED 2026-07-20]` **`cycle_detector._abrupt_drop` is effectively dead** (`cycle_detector.py:276`): declared, reset to `False` in 3 places (L783/894/944), and read at L1732 to gate an INTERRUPTED path — but **never set to `True` anywhere**. The `abrupt_drop_watts` / `abrupt_drop_ratio` config fields and their `DEFAULT_*` / `CONF_*` entries are vestigial; users who tune them see no effect.
+27. `[FIXED 2026-07-20/2026-07-21]` **`cycle_detector._abrupt_drop` is effectively dead** (`cycle_detector.py:276`): declared, reset to `False` in 3 places (L783/894/944), and read at L1732 to gate an INTERRUPTED path — but **never set to `True` anywhere**. The `abrupt_drop_watts` / `abrupt_drop_ratio` config fields and their `DEFAULT_*` / `CONF_*` entries are vestigial; users who tune them see no effect. **Panel-side cleanup (2026-07-21):** both settings removed from the panel.js settings schema, `_DIAGRAM_BY_KEY` map, SVG diagram renderer, and diagnostics table; translation keys `setting.abrupt_drop_ratio`, `setting.abrupt_drop_watts`, and `pg_desc.abrupt_drop_watts` removed from all 35 panel translation files.
 28. `[FIXED 2026-07-20]` **`features.CycleSignature.event_density` is permanently 0.0** (`features.py:38`): the field is declared and documented as deprecated/reserved in a comment, but any ML model that includes it during on-device training has a zero-variance input dimension.
 29. `[FIXED 2026-07-20]` **Playground legacy path still present** (`playground.py:361/576`): `run_playground_batch` / `_simulate_one` are the old less-accurate path; `run_playground_history` / `run_playground_sweep` use the faithful path. The legacy path is no longer reached from the panel but coexists as a maintenance burden. Additionally, `_SWEEP_LOWER_IS_BETTER` (L1459) is used internally to pick the optimal sweep cell but is not included in the returned payload, so clients cannot annotate axes or the optimum direction.
 30. `[FIXED 2026-07-20]` **`auto_label_cycles` service default mismatch**: `services.yaml:89` documents `confidence_threshold` default as `0.70`; `__init__.py:496` uses `.get("confidence_threshold", 0.75)`. Python wins when called without the param — the documented default is wrong.
@@ -312,6 +323,24 @@ false positive. Items 39-40 are new. **All open code bugs (27-31, 33-41) fixed i
 37. `[NOTE]` The Assist intent (`HaWashdataStatus`) is not auto-wired; users must copy `docs/custom_sentences/en/ha_washdata.yaml`. Intent response templates in `translations/intent/{lang}.json` are not hassfest-validated.
 38. `[NOTE]` `reconcile_suggestions` can cascade-create keys (`profile_unmatch_threshold`, `power_off_threshold_w`, `anti_wrinkle_*`, `pump_stuck_duration`) that are not in the panel's applyable allow-list — see item 40 above for the actionable version.
 41. `[NOTED 2026-07-20]` Embedded model `THRESHOLD` values (`cycle_end_detector` 0.60, `hybrid_curve_quality` 0.19, `live_match_commit` 0.371786) diverge substantially from the live operating thresholds (`DEFAULT_DEFER_FINISH_CONFIDENCE` 0.55, `ML_QUALITY_SUSPICIOUS_THRESHOLD` 0.65, `ML_MATCH_COMMIT_THRESHOLD` 0.85). This is intentional: the embedded `THRESHOLD` is a training artefact fed to `select_threshold` during on-device retraining; live consumers always apply their own constants. No code bug, but confusing to anyone reading the model files.
+
+**New items (2026-07-21 pass):**
+
+42. `[FIXED 2026-07-21]` **Dead sync `match_profile()` method in `profile_store.py`** (~56 lines, pre-#311 reimplementation): The method was a leftover synchronous matching path that omitted Stage-5 profile groups, golden cycle selection, and the envelope-based snapshot pipeline — diverging from the authoritative `async_match_profile`. It had zero callers anywhere in the codebase (all paths use the async version). Removed entirely; `playground.py` docstring that referenced it updated to point to "the store's async matching path".
+
+43. `[FIXED 2026-07-21]` **`resolve_scorer` / `resolve_regressor` lacked a feature-column schema guard** (`ml/engine.py`): A promoted on-device spec trained against an old `FEATURE_COLUMNS` schema could be silently preferred over the correct embedded baseline after a feature-column change. The guard now compares the spec's stored `feature_columns` list against the current model module's `FEATURE_COLUMNS` at load time; a mismatch logs a one-time warning and falls back to the embedded baseline (or returns `(None, None)` for baseless regressors). Four tests in `test_ml_training.py`, `test_ml_model_versions_store.py`, and `test_ml_remaining_time.py` were updated to use the real `FEATURE_COLUMNS`/`PROGRESS_FEATURE_COLUMNS` so the guard behaves correctly.
+
+45. `[FIXED 2026-07-21]` **`apply_split_interactive` used sync `add_cycle`, so retention ran unsaved** (`profile_store.py:6019`): The loop that inserts split-segment cycles called the sync `add_cycle()` helper, which schedules `async_enforce_retention()` as an untracked fire-and-forget task. Retention mutations therefore happened in memory *after* the subsequent `await self.async_save()`, leaving the store temporarily over the retention cap until the next unrelated save. **Fix:** changed to `await self.async_add_cycle()` so retention is awaited before the final save.
+
+49. `[FIXED 2026-07-21]` **Playground `_SIM_SERIES_THROTTLE_S=5.0` equalled sensor cadence** (`playground.py:364`): The series-throttle constant was 5.0 seconds, identical to the typical sensor reading cadence. For a 5s-cadence cycle every single reading triggered a full O(trace-length) estimator pass (`estimate_phase_progress`, `ml_progress_percent`, `phase_remaining`, `projected_energy`), making the simulation O(n²) in the number of readings. MAX_SERIES_PER_CYCLE=600 thinning only fired at finalize — after all the O(n²) work was done. **Fix:** raised to 30.0 s → ≤466 series points for a 233-min/5s cycle, ~6x fewer estimator calls, converting the practical work to O(n²/6).
+
+48. `[FIXED 2026-07-21]` **`_reprocess_task` cancel only honoured before ML training (step 4 of 5)** (`ws_api.py:2736`): Steps 1-3 (`async_reprocess_all_data`, golden backfill, suggestion analysis) ran to completion regardless of a pending cancel request. Cancel checkpoints with `STATE_CANCELLED` + partial result are now inserted before step 1 (after lock acquire) and after steps 1, 2, and 3, matching the existing check before ML training.
+
+47. `[FIXED 2026-07-21]` **`ProfileStore` init uses flat min-duration-ratio default, not per-device** (`manager.py:507-510`): `ProfileStore(...)` was constructed with `DEFAULT_PROFILE_MATCH_MIN_DURATION_RATIO` (0.10) as the options fallback, while `CycleDetectorConfig` correctly uses `DEFAULT_PROFILE_MATCH_MIN_DURATION_RATIO_BY_DEVICE.get(device_type, flat)`. Currently inert (dishwasher entry = 0.10 = flat default), but would silently apply the wrong Stage-1 gate on first power-cycle if a device type with a genuinely different ratio were added to the dict. **Fix:** `ProfileStore(...)` call now uses the per-device dict with fallback.
+
+46. `[FIXED 2026-07-21]` **Cycle-ID 12-char SHA prefix has no collision guard** (`profile_store.py:3084-3086`): `sha256(start_time + "_" + duration)[:12]` is deterministic and undeduped. Two cycles sharing the same raw start-time and duration (most likely during bulk reference-cycle imports) hash to the same ID, causing any ID-based lookup to return or delete the wrong cycle. **Fix:** `_add_cycle_data` now builds the set of existing IDs in the destination list and appends an incrementing suffix to the hash input until the candidate ID is unique.
+
+44. `[FIXED 2026-07-21]` **5 hardcoded English strings in `panel.js` bypassed `_t()`** (accessibility labels / tooltips / trim-modal hints): (1) pill remove-button `aria-label` in `_field()` — hardcoded `"Remove"`; fixed with `extra.t('btn.remove', …)` (standalone-function context requires `extra.t()`, not `this._t()`). (2) Sidebar toggle `aria-label` — hardcoded `"Toggle Home Assistant sidebar"`; fixed with `this._t('hdr.toggle_sidebar', …)`. (3) Log-drawer resize handle `title` — hardcoded `"Drag to resize"`; new key `lbl.drag_to_resize` added to `translations/panel/en.json`. (4-5) Trim-modal head/tail hint text — two hardcoded English sentences; new keys `msg.head_trim_hint` and `msg.tail_trim_hint` added. The merge dropdown already used `lbl.create_new_profile` (key existed; only the call-site was missing).
 
 ---
 
