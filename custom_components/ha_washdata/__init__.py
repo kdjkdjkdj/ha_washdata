@@ -28,10 +28,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
+import voluptuous as vol
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import config_validation as cv
 
 from .const import (
     DOMAIN,
+    EXPERIMENTAL_DATA_KEY,
     SERVICE_SUBMIT_FEEDBACK,
     CONF_LINKED_DEVICE,
     CONF_MIN_POWER,
@@ -337,6 +340,22 @@ async def _migrate_online_to_global(hass: HomeAssistant, entry: ConfigEntry, man
                 await manager.profile_store.clear_store_account()
             except Exception:  # pylint: disable=broad-exception-caught
                 pass
+
+
+# Config entries own all per-device setup. The only YAML this integration reads
+# is an optional global experimental-features opt-in that unhides the panel's
+# Experimental section (ha_washdata: experimental: true).
+CONFIG_SCHEMA = vol.Schema(
+    {DOMAIN: vol.Schema({vol.Optional("experimental", default=False): cv.boolean})},
+    extra=vol.ALLOW_EXTRA,
+)
+
+
+async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
+    """Pick up the optional global YAML opt-in for experimental fork features."""
+    conf = config.get(DOMAIN) or {}
+    hass.data[EXPERIMENTAL_DATA_KEY] = bool(conf.get("experimental", False))
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

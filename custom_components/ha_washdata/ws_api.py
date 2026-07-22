@@ -71,6 +71,7 @@ from .const import (
     CONF_STOP_THRESHOLD_W,
     CONF_EXPERIMENTAL_PHASE_DETECTION,
     DEFAULT_EXPERIMENTAL_PHASE_DETECTION,
+    EXPERIMENTAL_DATA_KEY,
     CONF_SWITCH_ENTITY,
     CONF_WATCHDOG_INTERVAL,
     DEFAULT_DEVICE_TYPE,
@@ -3678,6 +3679,9 @@ async def ws_get_panel_config(
         "is_admin": is_admin,
         "user": {"id": uid, "name": getattr(user, "name", None)},
         "prefs": dict((cfg.get("prefs") or {}).get(uid, {})),
+        # Experimental fork features are hidden in the panel unless enabled via
+        # configuration.yaml (ha_washdata: experimental: true).
+        "experimental": bool(hass.data.get(EXPERIMENTAL_DATA_KEY, False)),
     }
     if is_admin:
         rbac = cfg.get("rbac", {})

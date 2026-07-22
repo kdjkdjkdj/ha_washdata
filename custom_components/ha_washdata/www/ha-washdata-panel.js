@@ -165,7 +165,7 @@ const _SETTINGS_SECTIONS = [
     { key: 'enable_phase_matching', label: 'Phase-aware time remaining', type: 'checkbox', def: false,
       doc: 'Break each running cycle into phases (heating, wash, spin) and budget the time remaining per phase, blended with the classic estimate - leaning on the phase budget early in the cycle and the classic estimate near the end. This personalises the countdown to how long your machine actually heats and runs, which is most noticeable in the first half of a cycle. Off = the classic estimate only. Only the time-remaining display is affected; program matching and cycle detection are unchanged.' },
   ] },
-  { id: 'phase_detection_exp', label: 'Experimental: Phase Detection', intro: 'Fork feature: use the phase segmenter to help detect the end of cycle. Experimental - off by default.', onlyDeviceTypes: ['dishwasher'], fields: [
+  { id: 'experimental', label: 'Experimental', intro: 'Experimental fork features. Hidden unless enabled in configuration.yaml (ha_washdata: experimental: true).', onlyDeviceTypes: ['dishwasher'], experimentalOnly: true, fields: [
     { key: 'experimental_use_of_phase_detection', label: 'Phase-based end detection (experimental)', type: 'checkbox', def: false,
       doc: 'Use the phase segmenter to recognise a dishwasher\'s passive drying tail and finish near the true program end, instead of overshooting while the low-power drying still reads as "running". Shorten-only: it can only bring a late finish forward, never end a cycle early, and only fires once past the expected duration on a confident program match. Dishwashers only. Experimental - off by default.' },
   ] },
@@ -4341,6 +4341,7 @@ class HaWashdataPanel extends HTMLElement {
       if (sec.id === 'ml_training') return false;
       if (currentDeviceType && sec.notDeviceTypes && sec.notDeviceTypes.includes(currentDeviceType)) return false;
       if (currentDeviceType && sec.onlyDeviceTypes && !sec.onlyDeviceTypes.includes(currentDeviceType)) return false;
+      if (sec.experimentalOnly && !(this._panelCfg && this._panelCfg.experimental)) return false;
       // F2: in Basic mode, hide sections with no essential (basic-flagged) fields.
       if (basicMode && !this._secHasBasicFields(sec)) return false;
       return true;
@@ -4893,6 +4894,7 @@ class HaWashdataPanel extends HTMLElement {
       if (sec.id === 'ml_training') return false;
       if (currentDeviceType && sec.notDeviceTypes && sec.notDeviceTypes.includes(currentDeviceType)) return false;
       if (currentDeviceType && sec.onlyDeviceTypes && !sec.onlyDeviceTypes.includes(currentDeviceType)) return false;
+      if (sec.experimentalOnly && !(this._panelCfg && this._panelCfg.experimental)) return false;
       // F2: keep the picked section in sync with the Basic-mode nav filter.
       if (basicMode && !this._secHasBasicFields(sec)) return false;
       return true;
@@ -4936,6 +4938,7 @@ class HaWashdataPanel extends HTMLElement {
       if (s.id === 'ml_training') return false;
       if (currentDeviceType && s.notDeviceTypes && s.notDeviceTypes.includes(currentDeviceType)) return false;
       if (currentDeviceType && s.onlyDeviceTypes && !s.onlyDeviceTypes.includes(currentDeviceType)) return false;
+      if (s.experimentalOnly && !(this._panelCfg && this._panelCfg.experimental)) return false;
       return true;
     });
     const match = f => (`${f.label || ''} ${f.key || ''} ${f.doc || ''} ${f.hint || ''}`).toLowerCase().includes(q);
@@ -4970,6 +4973,7 @@ class HaWashdataPanel extends HTMLElement {
       if (s.id === 'ml_training') return false;
       if (currentDeviceType && s.notDeviceTypes && s.notDeviceTypes.includes(currentDeviceType)) return false;
       if (currentDeviceType && s.onlyDeviceTypes && !s.onlyDeviceTypes.includes(currentDeviceType)) return false;
+      if (s.experimentalOnly && !(this._panelCfg && this._panelCfg.experimental)) return false;
       return true;
     });
     let out = '';

@@ -108,6 +108,10 @@ CONF_ENABLE_PHASE_MATCHING = "enable_phase_matching"
 # phase-resolved time-remaining blend). When off, detector behaviour is
 # byte-identical to upstream.
 CONF_EXPERIMENTAL_PHASE_DETECTION = "experimental_use_of_phase_detection"
+# hass.data key holding the global "experimental features enabled" flag, set from
+# configuration.yaml (ha_washdata: experimental: true). Gates hidden panel
+# sections (e.g. the Experimental section) so they only appear when opted in.
+EXPERIMENTAL_DATA_KEY = "ha_washdata_experimental"
 # Phase-structure consistency advisory (Profiles tab, never a notification).
 # A single-program/temperature profile should have a fairly consistent heating
 # block; wildly varying heating time or heating present in only some cycles
