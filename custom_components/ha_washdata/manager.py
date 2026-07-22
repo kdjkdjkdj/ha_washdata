@@ -788,6 +788,7 @@ class WashDataManager:
             device_name=config_entry.title,
             end_confidence_provider=self._ml_end_confidence,
             terminal_drop_provider=self._terminal_drop_provider,
+            drying_duration_provider=self._learned_drying_seconds,
         )
         self._ml_end_expectation_cache: tuple[str, dict[str, float]] | None = None
         # (cycle_count, earliest_quiet_offset|None, peak_range|None) for the
@@ -3617,6 +3618,15 @@ class WashDataManager:
         self.hass.async_create_task(
             self._async_process_cycle_end(cycle_data, cycle_token=end_token)
         )
+
+    def _learned_drying_seconds(self, program: str) -> float | None:
+        """Provider for the detector's drying-tail termination (fork opt-in): the
+        matched program's learned drying-tail length, from the cached phase
+        profiles. Returns None (detector keeps its fixed floor) on any failure."""
+        try:
+            return self.profile_store.learned_drying_seconds(program)
+        except Exception:  # noqa: BLE001 - never break detection
+            return None
 
     def _ml_end_confidence(
         self, points: list[tuple[float, float]], expected_duration: float

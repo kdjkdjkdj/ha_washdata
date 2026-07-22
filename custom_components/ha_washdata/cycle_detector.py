@@ -1100,6 +1100,33 @@ class CycleDetector:
             self._power_readings.append((timestamp, power))
             self._cycle_max_power = max(self._cycle_max_power, power)
 
+            # Fork opt-in (experimental_use_of_phase_detection): a dishwasher's
+            # passive drying tail draws a small steady power that reads as "active"
+            # to the thresholds, so the cycle sits in RUNNING through the whole
+            # drying phase and overshoots by up to the ~30-min end-spike wait. The
+            # segmenter sees the same plateau as a terminal idle role; finish near
+            # the true end once that drying tail has run its learned length.
+            # Shorten-only and fully gated (see _drying_tail_finished): off by
+            # default, so this is byte-identical to upstream when disabled.
+            if (
+                self._config.experimental_phase_detection
+                and self._drying_tail_finished(timestamp)
+            ):
+                self._logger.info(
+                    "Phase drying-tail termination: '%s' at %.0fs "
+                    "(expected %.0fs) - terminal drying idle complete, finishing.",
+                    self._matched_profile,
+                    (timestamp - (self._current_cycle_start or timestamp)).total_seconds(),
+                    self._expected_duration,
+                )
+                self._finish_cycle(
+                    timestamp,
+                    status="completed",
+                    termination_reason=TerminationReason.PHASE_DRYING,
+                    keep_tail=True,
+                )
+                return
+
             # Use dynamic threshold
             thresh = self._dynamic_pause_threshold
             if self._time_below_threshold >= thresh:

@@ -30,6 +30,7 @@ class TerminationReason(StrEnum):
     FORCE_STOPPED = "force_stopped"  # watchdog / no-update force end
     USER = "user"                # user manually stopped the cycle
     TERMINAL_DROP = "terminal_drop"  # anomalously-early hard cliff-to-0 (opt-in)
+    PHASE_DRYING = "phase_drying"    # dishwasher drying tail complete (phase opt-in)
 
 
 # Completed cycles stay eligible for anti-wrinkle handling only for these

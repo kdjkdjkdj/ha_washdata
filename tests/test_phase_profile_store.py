@@ -152,6 +152,21 @@ async def test_phase_remaining_works_for_dishwasher(store):
 
 
 @pytest.mark.asyncio
+async def test_learned_drying_seconds_from_cached_profile(store):
+    # Feeds the drying-tail termination: the cached phase profile's idle length.
+    for i, heat in enumerate((1400, 1500, 1600)):
+        _add_cycle(store, "Eco 50", f"d{i}", heat, device_type="dishwasher")
+    await store.async_rebuild_envelope("Eco 50")
+    secs = store.learned_drying_seconds("Eco 50")
+    assert secs is not None and secs > 0
+
+
+@pytest.mark.asyncio
+async def test_learned_drying_seconds_none_for_unknown_program(store):
+    assert store.learned_drying_seconds("no-such-program") is None
+
+
+@pytest.mark.asyncio
 async def test_phase_remaining_none_when_no_profiles(store):
     # no envelopes cached yet
     pd, total = _cotton_power_data(1500)

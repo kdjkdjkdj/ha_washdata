@@ -74,7 +74,12 @@ from .phase_catalog import (
     merge_phase_catalog,
     normalize_phase_name,
 )
-from .phase_segmenter import phase_matching_live_supported, phase_model_for, segment_cycle
+from .phase_segmenter import (
+    ROLE_IDLE,
+    phase_matching_live_supported,
+    phase_model_for,
+    segment_cycle,
+)
 from .phase_match import (
     build_phase_profile,
     match_phase_profiles,
@@ -4046,6 +4051,30 @@ class ProfileStore:
                 if pp is not None and pp.n_cycles >= PHASE_PROFILE_MIN_CYCLES:
                     out.append(pp)
         return out
+
+    def learned_drying_seconds(self, program: str) -> float | None:
+        """Mean drying/idle-tail length (s) for a program's cached phase profile.
+
+        Consumed by the detector's drying-tail termination (fork opt-in) so the
+        end wait adapts to how long THIS program normally dries. Returns the phase
+        profile's idle-role mean duration, or ``None`` when no phase profile is
+        cached for the program (the detector then keeps its fixed quiet-release
+        floor). Never raises.
+        """
+        try:
+            env = (self._data.get("envelopes") or {}).get(program)
+            if not isinstance(env, dict):
+                return None
+            pp = phase_profile_from_dict(env.get("phase_profile"))
+            if pp is None:
+                return None
+            idle = pp.roles.get(ROLE_IDLE)
+            if idle is None or idle.dur_mean <= 0:
+                return None
+            return float(idle.dur_mean)
+        except Exception:  # noqa: BLE001 - a lookup failure must not break detection
+            self._logger.debug("learned_drying_seconds failed for %r", program, exc_info=True)
+            return None
 
     def phase_remaining(
         self,

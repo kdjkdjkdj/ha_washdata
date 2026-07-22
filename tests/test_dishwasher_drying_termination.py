@@ -174,3 +174,56 @@ def test_experimental_phase_detection_settable():
         experimental_phase_detection=True,
     )
     assert cfg.experimental_phase_detection is True
+
+
+# --- Häppchen 2: wiring into the RUNNING-state handler (end-to-end) ---
+
+def _run_until_end(det, readings, ended):
+    """Feed readings through the real detector; return the cycle-time (s) at which
+    the cycle finished, or None if it never did."""
+    for ts, w in readings:
+        det.process_reading(float(w), ts)
+        if ended:
+            return (ts - readings[0][0]).total_seconds()
+    return None
+
+
+def _wired_detector(ended, *, switch, expected=5000.0, learned_drying=3000.0):
+    cfg = CycleDetectorConfig(
+        min_power=0.8, off_delay=600, device_type="dishwasher",
+        stop_threshold_w=1.0, start_threshold_w=1.5, min_off_gap=60,
+        match_interval=60, experimental_phase_detection=switch,
+    )
+    return CycleDetector(
+        cfg,
+        on_state_change=lambda o, n: None,
+        on_cycle_end=lambda info: ended.update(info),
+        # Fixed confident, unambiguous Eco match (name, conf, expected, phase, mismatch).
+        profile_matcher=lambda readings: ("Eco", 0.8, expected, None, False),
+        drying_duration_provider=lambda name: learned_drying,
+    )
+
+
+def test_wiring_finishes_overshooting_dishwasher_when_enabled():
+    # heating -> wash -> a drying tail far longer than expected (an overshoot the
+    # power thresholds cannot end, because 3 W reads as "active").
+    ended = {}
+    det = _wired_detector(ended, switch=True)
+    readings, _ = _trace(heat_s=600, wash_s=2400, idle_s=6000)  # ~9000 s trace
+    end_off = _run_until_end(det, readings, ended)
+    assert ended, "cycle should finish via the drying-tail path"
+    assert ended["termination_reason"] == "phase_drying"
+    assert ended["status"] == "completed"
+    # Finishes once the learned drying (~2700 s target) has elapsed past the
+    # expected duration - near the true end (~5700 s), NOT the 9000 s trace end.
+    assert 5000 <= end_off <= 6500
+
+
+def test_wiring_no_finish_when_switch_off():
+    # Same trace, switch OFF: the 3 W drying reads as active, the cycle stays
+    # RUNNING and never finishes via the drying path (byte-identical to upstream).
+    ended = {}
+    det = _wired_detector(ended, switch=False)
+    readings, _ = _trace(heat_s=600, wash_s=2400, idle_s=6000)
+    _run_until_end(det, readings, ended)
+    assert not ended
