@@ -65,11 +65,13 @@ def test_model_lookup():
     assert phase_model_for("air_fryer") is None
 
 
-def test_live_supported_excludes_dishwasher():
+def test_live_supported_includes_dishwasher():
     assert phase_matching_live_supported("washing_machine") is True
     assert phase_matching_live_supported("washer_dryer") is True
-    # dishwasher has a model (offline harness) but is NOT live-supported
-    assert phase_matching_live_supported("dishwasher") is False
+    # dishwasher is now live-supported (fork): the phase infra feeds the Kurz/Eco
+    # tiebreaker and the drying-tail termination signal. The phase-ETA blend stays
+    # dormant behind the opt-in, which the panel does not expose for dishwasher.
+    assert phase_matching_live_supported("dishwasher") is True
     assert phase_matching_live_supported("pump") is False
     assert phase_matching_live_supported(None) is False
 
@@ -82,7 +84,10 @@ def test_phase_matching_enabled_gating():
     assert phase_matching_enabled(off, "washing_machine") is False
     assert phase_matching_enabled({}, "washing_machine") is False
     assert phase_matching_enabled(None, "washing_machine") is False
-    assert phase_matching_enabled(on, "dishwasher") is False  # not live-supported
+    # dishwasher is now live-supported -> follows the opt-in like a washing machine
+    assert phase_matching_enabled(on, "dishwasher") is True
+    assert phase_matching_enabled(off, "dishwasher") is False
+    assert phase_matching_enabled({}, "dishwasher") is False
     assert phase_matching_enabled(on, "pump") is False
 
 

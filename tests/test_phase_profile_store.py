@@ -83,13 +83,30 @@ async def test_rebuild_populates_phase_profile_for_washing_machine(store):
 
 @pytest.mark.asyncio
 async def test_rebuild_skips_phase_profile_for_unsupported_device(store):
-    # dishwasher is NOT live-supported (offline-only); no phase_profile cached.
+    # dryer has no phase model (not live-supported); no phase_profile cached.
+    for i, heat in enumerate((1400, 1500, 1600)):
+        _add_cycle(store, "Timed Dry", f"d{i}", heat, device_type="dryer")
+    ok = await store.async_rebuild_envelope("Timed Dry")
+    assert ok
+    env = store._data["envelopes"]["Timed Dry"]
+    assert "phase_profile" not in env
+
+
+@pytest.mark.asyncio
+async def test_rebuild_populates_phase_profile_for_dishwasher(store):
+    # dishwasher is now live-supported (fork): the phase infra feeds the Kurz/Eco
+    # tiebreaker + drying-tail termination, so its envelopes must cache a
+    # phase_profile just like a washing machine.
     for i, heat in enumerate((1400, 1500, 1600)):
         _add_cycle(store, "Eco 50", f"d{i}", heat, device_type="dishwasher")
     ok = await store.async_rebuild_envelope("Eco 50")
     assert ok
     env = store._data["envelopes"]["Eco 50"]
-    assert "phase_profile" not in env
+    assert "phase_profile" in env, "phase_profile should be cached for dishwasher"
+    pp = env["phase_profile"]
+    assert "heating" in pp["roles"]
+    assert pp["roles"]["heating"]["dur_mean"] > 0
+    assert pp["n_cycles"] == 3
 
 
 @pytest.mark.asyncio
@@ -113,11 +130,25 @@ async def test_phase_remaining_after_rebuild(store):
 @pytest.mark.asyncio
 async def test_phase_remaining_none_for_unsupported_device(store):
     for i, heat in enumerate((1400, 1500, 1600)):
+        _add_cycle(store, "Timed Dry", f"d{i}", heat, device_type="dryer")
+    await store.async_rebuild_envelope("Timed Dry")
+    pd, total = _cotton_power_data(1500)
+    observed = [p for p in pd if p[0] <= 0.25 * total]
+    assert store.phase_remaining(observed, "dryer", "Timed Dry") is None
+
+
+@pytest.mark.asyncio
+async def test_phase_remaining_works_for_dishwasher(store):
+    # dishwasher now live-supported -> phase_remaining returns a per-role budget.
+    for i, heat in enumerate((1400, 1500, 1600)):
         _add_cycle(store, "Eco 50", f"d{i}", heat, device_type="dishwasher")
     await store.async_rebuild_envelope("Eco 50")
     pd, total = _cotton_power_data(1500)
     observed = [p for p in pd if p[0] <= 0.25 * total]
-    assert store.phase_remaining(observed, "dishwasher", "Eco 50") is None
+    res = store.phase_remaining(observed, "dishwasher", "Eco 50")
+    assert res is not None
+    assert res["matched"] == "Eco 50"
+    assert res["remaining_s"] > 0
 
 
 @pytest.mark.asyncio

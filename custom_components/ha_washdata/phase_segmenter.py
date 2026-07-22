@@ -115,11 +115,16 @@ _MODELS: dict[str, PhaseModel] = {
 }
 
 
-# Device types phase matching is rolled out for LIVE (validated by the Phase-0
-# ETA gate). Dishwasher has a model for OFFLINE evaluation only (its ETA gate was
-# a no-go and its end-of-cycle logic is delicate), so it is deliberately excluded
-# here even though ``phase_model_for("dishwasher")`` returns a model.
-LIVE_PHASE_DEVICE_TYPES: tuple[str, ...] = ("washing_machine", "washer_dryer")
+# Device types phase matching is rolled out for LIVE. Washing machine and
+# washer-dryer are validated by the Phase-0 ETA gate. Dishwasher is enabled here
+# (fork) so the phase infrastructure - per-role phase-profile caching + partial
+# segmentation - is available for the Kurz/Eco program tiebreaker and the
+# drying-tail termination signal (validated offline on real cycles, 2026-07-22).
+# NOTE: this makes the phase-ETA blend *capable* for dishwasher, but it stays
+# dormant behind the ``enable_phase_matching`` opt-in, which the panel
+# deliberately does NOT expose for dishwasher (its ETA gate was a no-go). The
+# fork wirings consume segmentation/role scores directly, not the ETA blend.
+LIVE_PHASE_DEVICE_TYPES: tuple[str, ...] = ("washing_machine", "washer_dryer", "dishwasher")
 
 
 def phase_model_for(device_type: str | None) -> PhaseModel | None:
