@@ -55,6 +55,18 @@ from .const import (
     DISHWASHER_MIN_CYCLE_DURATION_S,
     TERMINAL_DROP_OFF_DELAY_SECONDS,
 )
+from .phase_segmenter import (
+    ROLE_HEATING,
+    ROLE_IDLE,
+    phase_model_for,
+    segment_cycle,
+)
+
+# Fraction of a program's learned drying-tail length that must elapse before the
+# drying tail counts as complete. < 1.0 tolerates run-to-run variation in the
+# passive tail; the fixed quiet-release constant is still applied as a floor so a
+# program with a very short (or not-yet-learned) tail can never fire too eagerly.
+_DRYING_TAIL_DONE_FRACTION = 0.9
 
 # The dishwasher end-spike wait window is shared between two code paths
 # (Smart Termination's wait branch and _should_defer_finish's no-end-spike
@@ -219,6 +231,9 @@ class CycleDetector:
         terminal_drop_provider: (
             Callable[[list[tuple[float, float]], float], bool | None] | None
         ) = None,
+        drying_duration_provider: (
+            Callable[[str], float | None] | None
+        ) = None,
     ) -> None:
         """Initialize the cycle detector."""
         self._logger = DeviceLoggerAdapter(_LOGGER, device_name)
@@ -236,6 +251,12 @@ class CycleDetector:
         # Injected by the manager; None disables it (existing behavior). Opposite
         # asymmetry to the end-guard: it can only ever *shorten* the end wait.
         self._terminal_drop_provider = terminal_drop_provider
+        # Opt-in learned-drying-length lookup: (matched_program) -> the mean
+        # duration (s) of that program's terminal drying/idle tail, or None. Lets
+        # the drying-tail termination wait for as long as THIS program normally
+        # dries instead of a fixed floor. Injected by the manager (has the cached
+        # phase profiles); None keeps the conservative fixed-floor behaviour.
+        self._drying_duration_provider = drying_duration_provider
         # Throttle caches for the two providers, scoped to the cycle + expectation:
         # (last_reading_ts, expected_duration, cycle_start, result). Reused only
         # within the recompute window when expected_duration and cycle_start match.
@@ -340,6 +361,83 @@ class CycleDetector:
         base = 3.0 * self._p95_dt
         # Ensure end threshold is at least 15s greater than pause threshold
         return max(base, self._dynamic_pause_threshold + 15.0)
+
+    def _drying_tail_target_seconds(self) -> float:
+        """How long the terminal drying idle must be sustained before finishing.
+
+        Uses the matched program's learned drying-tail length (via the injected
+        provider) so the wait adapts per program, scaled by
+        ``_DRYING_TAIL_DONE_FRACTION``. Falls back to - and is always floored at -
+        ``DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS`` when no learned value is
+        available, so behaviour stays conservative without the provider.
+        """
+        floor = float(DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS)
+        provider = self._drying_duration_provider
+        if provider is None or not self._matched_profile:
+            return floor
+        try:
+            learned = provider(self._matched_profile)
+        except Exception:  # noqa: BLE001 - a bad provider must not break detection
+            self._logger.debug("drying-duration provider failed", exc_info=True)
+            return floor
+        if not learned or learned <= 0:
+            return floor
+        return max(floor, float(learned) * _DRYING_TAIL_DONE_FRACTION)
+
+    def _drying_tail_finished(self, timestamp: datetime) -> bool:
+        """True when a dishwasher's passive drying tail is complete enough to end.
+
+        Fork feature #3. A dishwasher's passive drying tail draws a small, steady
+        power that can sit ABOVE ``stop_threshold_w``, so the detector reads it as
+        "active": ``_time_below_threshold`` never accumulates during drying and
+        the power quiet-release is blind to it, letting the cycle overshoot by up
+        to the ~30-min end-spike wait. The phase segmenter classifies the same
+        low-power plateau as a terminal ``idle`` role, which is the reliable
+        "drying done" signal the power thresholds lack.
+
+        Asymmetric, shorten-only: gated on ``current_duration >= expected`` so it
+        can only cut the post-expected overshoot, never fire early mid-cycle. Also
+        requires a confident, unambiguous match (the expected duration must be
+        trustworthy) and that the terminal idle has been sustained for the matched
+        program's learned drying length (see ``_drying_tail_target_seconds``)
+        after heating occurred. Never raises (segmentation must never break the
+        detector).
+        """
+        try:
+            if self._config.device_type != "dishwasher":
+                return False
+            if not self._matched_profile or self._expected_duration <= 0:
+                return False
+            if getattr(self, "_last_match_confidence", 0.0) < 0.4:
+                return False
+            if self._match_ambiguous or self._match_prefix_ambiguous:
+                return False
+            start = self._current_cycle_start
+            if start is None:
+                return False
+            current_duration = (timestamp - start).total_seconds()
+            # Safety floor: only ever shorten the post-expected overshoot.
+            if current_duration < self._expected_duration:
+                return False
+            model = phase_model_for(self._config.device_type)
+            if model is None or len(self._power_readings) < 4:
+                return False
+            t0 = self._power_readings[0][0]
+            t = [(ts - t0).total_seconds() for ts, _ in self._power_readings]
+            w = [float(p) for _, p in self._power_readings]
+            segs = segment_cycle(t, w, model, partial=True)
+            if not segs:
+                return False
+            terminal = segs[-1]
+            heating_seen = any(s.role == ROLE_HEATING for s in segs)
+            return (
+                terminal.role == ROLE_IDLE
+                and heating_seen
+                and terminal.duration_s >= self._drying_tail_target_seconds()
+            )
+        except Exception:  # noqa: BLE001 - segmentation must never break detection
+            self._logger.debug("drying-tail check failed", exc_info=True)
+            return False
 
     def _update_cadence(self, dt: float) -> None:
         """Update rolling cadence statistics."""
