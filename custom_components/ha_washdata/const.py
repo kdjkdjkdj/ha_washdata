@@ -101,6 +101,12 @@ CONF_EXPOSE_DEBUG_ENTITIES = "expose_debug_entities"  # Expose detailed debug se
 # machine, washer-dryer). Default off. Validated by the Phase-0 ETA gate; see
 # docs/superpowers/specs/2026-07-17-phase-segmented-matching-design.md.
 CONF_ENABLE_PHASE_MATCHING = "enable_phase_matching"
+# Fork opt-in (experimental, default off): use the phase segmenter's output for
+# cycle DECISIONS - the Kurz/Eco program tiebreaker and the drying-tail end
+# detection. Distinct from CONF_ENABLE_PHASE_MATCHING above (that is the
+# phase-resolved time-remaining blend). When off, detector behaviour is
+# byte-identical to upstream.
+CONF_EXPERIMENTAL_PHASE_DETECTION = "experimental_use_of_phase_detection"
 # Phase-structure consistency advisory (Profiles tab, never a notification).
 # A single-program/temperature profile should have a fairly consistent heating
 # block; wildly varying heating time or heating present in only some cycles
@@ -352,6 +358,9 @@ TERMINAL_DROP_MIN_PEAK_RATIO = 5.0      # cycle must have been clearly ON (peak 
 TERMINAL_DROP_PEAK_FAMILIAR_TOL = 0.4
 
 DEFAULT_AUTO_TUNE_NOISE_EVENTS_THRESHOLD = 3  # Ghost cycles before threshold adjustment
+
+# Fork phase-detection opt-in default (experimental; disabled by default).
+DEFAULT_EXPERIMENTAL_PHASE_DETECTION = False
 
 # Anti-wrinkle defaults (advanced; disabled by default)
 DEFAULT_ANTI_WRINKLE_ENABLED = False

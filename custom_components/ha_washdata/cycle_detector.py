@@ -136,6 +136,9 @@ class CycleDetectorConfig:
     power_off_delay: float = 30.0
     match_interval: int = 300  # Default profile match interval
     profile_duration_tolerance: float = 0.25  # Default tolerance (±25%)
+    # Fork opt-in (experimental, default off): use phase-segmenter output for
+    # cycle decisions (Kurz/Eco tiebreaker + drying-tail end detection).
+    experimental_phase_detection: bool = False
     anti_wrinkle_enabled: bool = False
     anti_wrinkle_max_power: float = 400.0
     anti_wrinkle_max_duration: float = 60.0

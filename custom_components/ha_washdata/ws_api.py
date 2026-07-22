@@ -69,6 +69,8 @@ from .const import (
     CONF_START_DURATION_THRESHOLD,
     CONF_START_THRESHOLD_W,
     CONF_STOP_THRESHOLD_W,
+    CONF_EXPERIMENTAL_PHASE_DETECTION,
+    DEFAULT_EXPERIMENTAL_PHASE_DETECTION,
     CONF_SWITCH_ENTITY,
     CONF_WATCHDOG_INTERVAL,
     DEFAULT_DEVICE_TYPE,
@@ -4850,6 +4852,12 @@ def _playground_base_config(manager: Any, entry: Any) -> CycleDetectorConfig:
         start_threshold_w=float(opts.get(CONF_START_THRESHOLD_W, min_power)),
         stop_threshold_w=float(
             opts.get(CONF_STOP_THRESHOLD_W, min_power * 0.6 if min_power else 2.0)
+        ),
+        experimental_phase_detection=bool(
+            opts.get(
+                CONF_EXPERIMENTAL_PHASE_DETECTION,
+                DEFAULT_EXPERIMENTAL_PHASE_DETECTION,
+            )
         ),
     )
 

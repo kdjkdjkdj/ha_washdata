@@ -104,6 +104,7 @@ from .const import (
     CONF_EXTERNAL_END_TRIGGER_ENABLED,
     CONF_EXTERNAL_END_TRIGGER,
     CONF_EXTERNAL_END_TRIGGER_INVERTED,
+    CONF_EXPERIMENTAL_PHASE_DETECTION,
     CONF_ANTI_WRINKLE_ENABLED,
     CONF_ANTI_WRINKLE_MAX_POWER,
     CONF_ANTI_WRINKLE_MAX_DURATION,
@@ -145,6 +146,7 @@ from .const import (
     DEFAULT_PROFILE_MATCH_INTERVAL,
     DEFAULT_PROFILE_MATCH_MIN_DURATION_RATIO,
     DEFAULT_PROFILE_MATCH_MIN_DURATION_RATIO_BY_DEVICE,
+    DEFAULT_EXPERIMENTAL_PHASE_DETECTION,
     DEFAULT_ANTI_WRINKLE_ENABLED,
     DEFAULT_ANTI_WRINKLE_MAX_POWER,
     DEFAULT_ANTI_WRINKLE_MAX_DURATION,
@@ -694,6 +696,12 @@ class WashDataManager:
             match_interval=int(
                 config_entry.options.get(
                     CONF_PROFILE_MATCH_INTERVAL, DEFAULT_PROFILE_MATCH_INTERVAL
+                )
+            ),
+            experimental_phase_detection=bool(
+                config_entry.options.get(
+                    CONF_EXPERIMENTAL_PHASE_DETECTION,
+                    DEFAULT_EXPERIMENTAL_PHASE_DETECTION,
                 )
             ),
             anti_wrinkle_enabled=bool(

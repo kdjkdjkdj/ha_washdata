@@ -22,6 +22,7 @@ from custom_components.ha_washdata.cycle_detector import (
     CycleDetector,
     CycleDetectorConfig,
 )
+from custom_components.ha_washdata.const import CONF_EXPERIMENTAL_PHASE_DETECTION
 
 BASE = datetime(2026, 1, 1, 8, 0, 0)
 
@@ -153,3 +154,23 @@ def test_drying_tail_provider_error_falls_back_to_floor():
     readings, total = _trace(idle_s=1200)
     _prime(det, readings, expected=3000.0)
     assert det._drying_tail_finished(readings[-1][0]) is True
+
+
+# --- experimental_use_of_phase_detection opt-in switch (feature-gate plumbing) ---
+
+def test_experimental_phase_detection_conf_key():
+    # The config-key string is user-facing / migration-sensitive; lock it.
+    assert CONF_EXPERIMENTAL_PHASE_DETECTION == "experimental_use_of_phase_detection"
+
+
+def test_experimental_phase_detection_default_off():
+    cfg = CycleDetectorConfig(min_power=0.8, off_delay=600, device_type="dishwasher")
+    assert cfg.experimental_phase_detection is False
+
+
+def test_experimental_phase_detection_settable():
+    cfg = CycleDetectorConfig(
+        min_power=0.8, off_delay=600, device_type="dishwasher",
+        experimental_phase_detection=True,
+    )
+    assert cfg.experimental_phase_detection is True
