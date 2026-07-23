@@ -38,6 +38,8 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CLUSTER_RESAMPLE_N,
     CLUSTER_SHAPE_SIMILARITY_THRESHOLD,
+    CONF_DEVICE_TYPE,
+    DEFAULT_DEVICE_TYPE,
     GROUP_MIN_COHESION,
     MAINTENANCE_EVENT_TYPES,
     MAINTENANCE_RECENT_SUPPRESS_DAYS,
@@ -3823,6 +3825,31 @@ class ProfileStore:
             )
         return repaired
 
+    def _entry_device_type(self) -> str:
+        """Device type configured on this store's config entry (options -> data ->
+        default), or "" when the entry is gone.
+
+        Fallback source for per-profile phase-profile building: profiles created
+        via label_cycle/create_profile carry no ``device_type`` of their own, so
+        without this the per-profile lookup resolves to "" and wrongly gates phase
+        support off for an enabled device type (e.g. dishwasher). Mirrors the
+        manager's resolution so phase support gates on the same value the detector
+        sees. Never raises.
+        """
+        try:
+            entry = self.hass.config_entries.async_get_entry(self.entry_id)
+            if entry is None:
+                return ""
+            return str(
+                entry.options.get(
+                    CONF_DEVICE_TYPE,
+                    entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE),
+                )
+                or ""
+            )
+        except Exception:  # noqa: BLE001 - never break an envelope rebuild
+            return ""
+
     async def async_rebuild_envelope(self, profile_name: str) -> bool:
         """
         Build/rebuild statistical envelope for a profile asynchronously.
@@ -3959,8 +3986,14 @@ class ProfileStore:
         # phase-segmented matching / phase-resolved ETA. Built only for device types
         # phase matching is live-supported for; absent otherwise (consumers fall back
         # to the whole-cycle pipeline). Pure/cheap - segmentation is O(samples).
+        # Prefer the profile's own device_type, else fall back to the config
+        # entry's device_type. Profiles created via label_cycle/create_profile
+        # carry no device_type field, so without this fallback the lookup resolves
+        # to "" and wrongly gates phase support off for an enabled device type
+        # (e.g. dishwasher) -> no phase_profile is ever cached.
         device_type = str(
-            self._data.get("profiles", {}).get(profile_name, {}).get("device_type") or ""
+            self._data.get("profiles", {}).get(profile_name, {}).get("device_type")
+            or self._entry_device_type()
         )
         # Offload the per-cycle segmentation to the executor (it can be tens of ms
         # for very long traces; keep it off the event loop, like the envelope DTW).

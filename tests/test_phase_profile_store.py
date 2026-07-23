@@ -262,3 +262,58 @@ async def test_rebuild_phase_profile_matches_temperature(store):
     cold = store._data["envelopes"]["Cotton 30"]["phase_profile"]["roles"]["heating"]["dur_mean"]
     hot = store._data["envelopes"]["Cotton 90"]["phase_profile"]["roles"]["heating"]["dur_mean"]
     assert hot > cold * 2  # 37 min vs 9 min
+
+
+def _add_cycle_no_device_type(store, name, cid, heat_s):
+    """Like _add_cycle but leaves the profile WITHOUT a device_type key, as
+    profiles created via create_profile/label_cycle actually are."""
+    pd, total = _cotton_power_data(heat_s)
+    store._data["past_cycles"].append({
+        "id": cid, "profile_name": name, "status": "completed",
+        "duration": total, "power_data": pd, "max_power": 1700.0,
+    })
+    store._data.setdefault("profiles", {})[name] = {
+        "avg_duration": total, "phases": []
+    }  # NOTE: no device_type key on purpose
+
+
+def _entry_returning(store, device_type):
+    entry = MagicMock()
+    entry.options = {"device_type": device_type}
+    entry.data = {}
+    store.hass.config_entries.async_get_entry = MagicMock(return_value=entry)
+
+
+@pytest.mark.asyncio
+async def test_rebuild_falls_back_to_entry_device_type(store):
+    # Regression: profiles created via create_profile/label_cycle carry NO
+    # device_type field, so the per-profile lookup resolves to "" and — without
+    # the config-entry fallback — skips phase-profile caching even for an enabled
+    # device (dishwasher), silently disabling the drying-tail / tiebreaker feature.
+    for i, heat in enumerate((1400, 1500, 1600)):
+        _add_cycle_no_device_type(store, "Eco 50", f"nd{i}", heat)
+    assert "device_type" not in store._data["profiles"]["Eco 50"]
+    _entry_returning(store, "dishwasher")
+
+    ok = await store.async_rebuild_envelope("Eco 50")
+    assert ok is True
+    env = store._data["envelopes"]["Eco 50"]
+    assert "phase_profile" in env, (
+        "phase_profile must be cached via the config-entry device_type fallback"
+    )
+    # And the drying-tail termination's learned length becomes available.
+    assert store.learned_drying_seconds("Eco 50") is not None
+
+
+@pytest.mark.asyncio
+async def test_rebuild_fallback_respects_unsupported_entry_device(store):
+    # The fallback must not OVER-enable: a device-type-less profile whose entry is
+    # an unsupported device (dryer has no phase model) still caches no phase_profile.
+    for i, heat in enumerate((1400, 1500, 1600)):
+        _add_cycle_no_device_type(store, "Timed Dry", f"nu{i}", heat)
+    _entry_returning(store, "dryer")
+
+    ok = await store.async_rebuild_envelope("Timed Dry")
+    assert ok is True
+    env = store._data["envelopes"]["Timed Dry"]
+    assert "phase_profile" not in env
