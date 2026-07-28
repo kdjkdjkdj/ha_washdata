@@ -1231,9 +1231,28 @@ class WashDataManager:
                         profile = self.profile_store.get_profile(current_matched)
                         if profile:
                             avg_dur = profile.get("avg_duration", 0)
-                            if avg_dur > 0 and (mapped_time / avg_dur) > 0.95:
-                                verified_pause = False
-                                self._logger.info("Smart Termination: Near end of profile. Releasing pause lock.")
+                            if avg_dur > 0:
+                                # The release decision below is otherwise silent: when it
+                                # does not fire, the cycle stays deferred until the hard
+                                # max-deferral cap with no trace of why.  Log the inputs
+                                # so a stuck verified pause can be told apart from a
+                                # mapped_time that simply stopped advancing.
+                                ratio = mapped_time / avg_dur
+                                self._logger.debug(
+                                    "Smart Termination check for %s: mapped_time=%.0fs "
+                                    "avg_duration=%.0fs ratio=%.3f elapsed=%.0fs "
+                                    "(releases at >0.95)",
+                                    current_matched, mapped_time, avg_dur, ratio,
+                                    current_duration,
+                                )
+                                if ratio > 0.95:
+                                    verified_pause = False
+                                    self._logger.info("Smart Termination: Near end of profile. Releasing pause lock.")
+                            else:
+                                self._logger.debug(
+                                    "Smart Termination check for %s skipped: profile has no avg_duration",
+                                    current_matched,
+                                )
                     except Exception as e:
                         self._logger.debug("Smart Termination alignment verification failed: %s", e)
                 else:

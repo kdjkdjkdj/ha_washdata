@@ -5,6 +5,14 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.3.1 - 2026-07-28 (fork build)
+
+Fork-only diagnostic build on top of upstream 0.5.3. No behaviour change.
+
+### Diagnostics
+
+- **Smart Termination now logs why it did or did not release the pause lock** (`manager.py`): when an envelope-verified pause is active, the release check compares the DTW-mapped position in the profile against the profile's average duration and releases the lock above 0.95. Only the *release* was logged, so a cycle that stayed deferred until the hard max-deferral cap (4 h + 30 min) left no trace of how close it ever came. The check now logs `mapped_time`, `avg_duration`, the resulting ratio and the elapsed cycle time on every evaluation, which distinguishes "the threshold was just missed" from "mapped_time never advanced". No new computation — the values already existed at the call site, `mapped_time` was simply never surfaced.
+
 ## 0.5.3 - 2026-07-26
 
 ### Features
