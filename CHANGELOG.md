@@ -5,6 +5,14 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.3.2 - 2026-07-29 (fork build)
+
+Fork-only diagnostic build on top of upstream 0.5.3. No behaviour change.
+
+### Diagnostics
+
+- **Smart Termination now logs why a due fast path was blocked** (`cycle_detector.py`): the gate in `STATE_ENDING` has four arms — expected duration reached, match confidence ≥ 0.4, `_match_ambiguous`, and `_match_prefix_ambiguous` (the latter two added with the #288 prefix-split fix) — but only the *successful* path was ever logged. When one of the ambiguity guards blocked the fast path, nothing was emitted at all: the cycle silently fell through to the power-based fallback timeout and the only visible symptom was a late finish with no stated cause. Reaching the cause meant computing `SMART_TERM_LANDSCAPE_RATIO` and `SMART_TERM_LANDSCAPE_MIN_SHAPE` by hand against a finished cycle's stored `match_ranking_top5`. A washing machine with two learned profiles 1.55× apart in duration (85.9 min and 133.0 min) trips the prefix guard on *every* short run, costing about 20 minutes per cycle. The blocking arm(s) are now named in a DEBUG line once the cycle is genuinely past its expected duration. The line fires on reason *change* only, so a long low-power tail cannot flood the log, and it is suppressed entirely while `_expected_duration` is 0, where the duration arm is trivially true and "due" would be misleading. Nothing but a log statement and the string that de-duplicates it.
+
 ## 0.5.3.1 - 2026-07-28 (fork build)
 
 Fork-only diagnostic build on top of upstream 0.5.3. No behaviour change.
