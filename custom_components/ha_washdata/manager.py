@@ -1228,31 +1228,47 @@ class WashDataManager:
                     verified_pause = True
                     # Smart Termination within Envelope block
                     try:
-                        profile = self.profile_store.get_profile(current_matched)
-                        if profile:
-                            avg_dur = profile.get("avg_duration", 0)
-                            if avg_dur > 0:
-                                # The release decision below is otherwise silent: when it
-                                # does not fire, the cycle stays deferred until the hard
-                                # max-deferral cap with no trace of why.  Log the inputs
-                                # so a stuck verified pause can be told apart from a
-                                # mapped_time that simply stopped advancing.
-                                ratio = mapped_time / avg_dur
-                                self._logger.debug(
-                                    "Smart Termination check for %s: mapped_time=%.0fs "
-                                    "avg_duration=%.0fs ratio=%.3f elapsed=%.0fs "
-                                    "(releases at >0.95)",
-                                    current_matched, mapped_time, avg_dur, ratio,
-                                    current_duration,
-                                )
-                                if ratio > 0.95:
-                                    verified_pause = False
-                                    self._logger.info("Smart Termination: Near end of profile. Releasing pause lock.")
-                            else:
-                                self._logger.debug(
-                                    "Smart Termination check for %s skipped: profile has no avg_duration",
-                                    current_matched,
-                                )
+                        # `mapped_time` is a position ON the envelope's own time grid: the
+                        # worker clamps the mapped index to the last grid slot and returns
+                        # `envelope_time_grid[idx]`, so it can never exceed the envelope's
+                        # span.  The release therefore has to be measured against that same
+                        # span.  Measuring it against `avg_duration` compares two
+                        # differently-derived numbers: the span is the duration of the
+                        # *median* member cycle (compute_envelope_worker picks the cycle
+                        # closest to the median), while `avg_duration` is the
+                        # outlier-trimmed *mean*.  Whenever the mean runs longer than the
+                        # median - which any over-long cycle causes, and which every
+                        # force-ended cycle feeds in through its trailing standby overhang -
+                        # the threshold moves past the end of the grid and can never be
+                        # reached, so the cycle sits deferred until the max-deferral cap.
+                        envelope = self.profile_store.get_envelope(current_matched)
+                        span = float((envelope or {}).get("target_duration") or 0.0)
+                        if span > 0:
+                            # The release decision below is otherwise silent: when it
+                            # does not fire, the cycle stays deferred until the hard
+                            # max-deferral cap with no trace of why.  Log the inputs
+                            # so a stuck verified pause can be told apart from a
+                            # mapped_time that simply stopped advancing.  avg_duration
+                            # is logged alongside because the gap between the two is
+                            # what used to make the threshold unreachable.
+                            ratio = mapped_time / span
+                            profile = self.profile_store.get_profile(current_matched)
+                            avg_dur = float((profile or {}).get("avg_duration") or 0.0)
+                            self._logger.debug(
+                                "Smart Termination check for %s: mapped_time=%.0fs "
+                                "envelope_span=%.0fs ratio=%.3f elapsed=%.0fs "
+                                "(avg_duration=%.0fs, releases at >0.95)",
+                                current_matched, mapped_time, span, ratio,
+                                current_duration, avg_dur,
+                            )
+                            if ratio > 0.95:
+                                verified_pause = False
+                                self._logger.info("Smart Termination: Near end of profile. Releasing pause lock.")
+                        else:
+                            self._logger.debug(
+                                "Smart Termination check for %s skipped: envelope has no target_duration",
+                                current_matched,
+                            )
                     except Exception as e:
                         self._logger.debug("Smart Termination alignment verification failed: %s", e)
                 else:

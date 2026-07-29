@@ -5,6 +5,15 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.3.3 - 2026-07-29 (fork build)
+
+Fork build on top of upstream 0.5.3. Contains one real behaviour fix.
+
+### Fixed
+
+- **The verified-pause release is now measured against the envelope's own span** (`manager.py`): `mapped_time` is a position on the envelope's time grid — the alignment worker clamps the mapped index to the last grid slot and returns `envelope_time_grid[idx]`, so it can never exceed the envelope's `target_duration`. The release check divided it by `avg_duration` instead. Those are two differently-derived numbers: `target_duration` is the duration of the *median* member cycle, `avg_duration` the outlier-trimmed *mean*. Whenever the mean runs longer than the median, `0.95 × avg_duration` moves past the end of the grid and the release becomes arithmetically unreachable — the cycle then sits deferred until the max-deferral cap force-ends it. The two estimators drift apart in exactly the situation that matters: every force-ended cycle carries its trailing standby overhang into the stored duration, lifting the mean while leaving the median where it is, so each hang shortens the distance to the next one. Measured here: one force-ended dishwasher cycle moved a profile's ceiling from 1.0034 to 0.9908 in a single run, and a survey of ten profiles across two installs found one already past the line. Dividing by the span makes the ratio read as "how far along the learned shape are we", puts both sides on the same grid, and bounds the ceiling at 1.0 by construction. The `span > 0` guard replaces `avg_dur > 0` one-for-one; `avg_duration` is still logged next to the ratio.
+- **Test coverage for the release branch** (`tests/test_smart_termination_envelope_span.py`): the branch had none, which is why the change was initially green against the entire suite. Two of the six new tests fail without the fix.
+
 ## 0.5.3.2 - 2026-07-29 (fork build)
 
 Fork-only diagnostic build on top of upstream 0.5.3. No behaviour change.
