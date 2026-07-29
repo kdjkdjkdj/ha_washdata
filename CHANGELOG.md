@@ -5,6 +5,15 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.3.4 - 2026-07-29 (fork build)
+
+Fork build on top of upstream 0.5.3. Behaviour change — larger than 0.5.3.3, and the one that actually shortens a stuck cycle.
+
+### Fixed
+
+- **The live trace is now put on the envelope's time grid before the alignment** (`profile_store.py`): the envelope is built from time-resampled curves — `compute_envelope_worker` interpolates every member cycle onto a uniform grid — but `async_verify_alignment` handed the live trace to the DTW as raw sample values with the timestamps dropped. The mapped index was therefore driven by the *number* of samples rather than by elapsed time; the worker's no-path fallback says so outright (`offset + len(curr) - 1`). Invisible while readings arrive at the cadence the envelope was built at, decisive once they do not: in a standby tail the meter goes quiet and the only readings are the watchdog's 0 W keepalives, one per `off_delay`, each advancing the position by a single grid step no matter how much wall-clock time it stands for. Measured offline against a real store (1166-point envelope at 10 s per slot, 300 s keepalives): the position advanced exactly 10 s per keepalive — 30× slower than the clock, 0.843 → 0.889 over 270 simulated minutes, never reaching the 0.95 release — and 12 samples of 1900 W mapped to precisely the same position as 12 samples of 0 W, since only their count entered the result. Truncating the same trace at 30/70/80/90/100 % of its length shows the mapping was not merely slow but erratic (0.290 / 0.055 / 0.756 / 0.779 / 0.851 against expected 0.310 / 0.724 / 0.828 / 0.931 / 1.000); after the change it tracks (0.343 / 0.757 / 0.875 / 0.978 / 1.000). Resampling uses the same linear interpolation as the build side and is bounded at twice the envelope length.
+- **Test coverage for the alignment path** (`tests/test_verify_alignment_time_resample.py`): the path had none. Two of the seven new tests fail without the fix; one guards the opposite failure mode — a partly-finished cycle must still map short, so the release does not open for every running cycle.
+
 ## 0.5.3.3 - 2026-07-29 (fork build)
 
 Fork build on top of upstream 0.5.3. Contains one real behaviour fix.

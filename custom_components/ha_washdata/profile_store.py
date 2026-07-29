@@ -5242,9 +5242,50 @@ class ProfileStore:
             return False, 0.0, 9999.0
 
         try:
-            current_power_list = [float(x[1]) for x in current_power_data]
+            current_offsets = [float(x[0]) for x in current_power_data]
+            current_values = [float(x[1]) for x in current_power_data]
         except Exception:  # pylint: disable=broad-exception-caught
             return False, 0.0, 9999.0
+
+        # Put the live trace on the envelope's own time step before the DTW.
+        #
+        # The envelope is BUILT from time-resampled curves - compute_envelope_worker
+        # interpolates every member cycle onto a uniform grid - but the live trace was
+        # handed over as raw samples with the timestamps dropped.  The mapped index is
+        # therefore driven by the NUMBER of samples rather than by elapsed time; the
+        # worker's no-path fallback states it outright: ``offset + len(curr) - 1``.
+        #
+        # That asymmetry is invisible while readings arrive at the cadence the envelope
+        # was built at, and decisive once they do not.  In a standby tail the meter goes
+        # quiet and the only readings are the watchdog's 0 W keepalives, one per
+        # ``off_delay``: each advances the mapped position by a single grid step, so it
+        # crawls at a fraction of wall-clock speed and the release threshold is not
+        # reached before the max-deferral cap fires.  Measured offline against a real
+        # store: with 300 s keepalives against a 10 s grid the position advanced 10 s per
+        # keepalive - 30x too slow - and 12 samples of 1900 W mapped to exactly the same
+        # position as 12 samples of 0 W, since only their count entered the result.
+        #
+        # Resampling with the same linear interpolation the build side uses restores the
+        # symmetry: a 300 s gap now consumes 30 grid slots instead of one.
+        current_power_list = current_values
+        if (
+            len(current_offsets) >= 2
+            and len(env_time) >= 2
+            and current_offsets[-1] > current_offsets[0]
+        ):
+            grid_step = (env_time[-1] - env_time[0]) / (len(env_time) - 1)
+            if grid_step > 0:
+                span_s = current_offsets[-1] - current_offsets[0]
+                # Bounded: the DTW is O(N*M), and past twice the envelope span the cycle
+                # is a timeout case anyway - no useful alignment is left to gain there.
+                points = min(int(span_s / grid_step) + 1, 2 * len(env_time))
+                if points >= 2:
+                    resample_grid = np.linspace(
+                        current_offsets[0], current_offsets[-1], points
+                    )
+                    current_power_list = np.interp(
+                        resample_grid, current_offsets, current_values
+                    ).tolist()
 
         # Offload to worker
         mapped_time, mapped_power, score = await self.hass.async_add_executor_job(
