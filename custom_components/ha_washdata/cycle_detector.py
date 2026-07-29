@@ -301,6 +301,9 @@ class CycleDetector:
         self._end_spike_duration: float = 0.0  # cycle duration (s) when _end_spike_seen was last set
         self._match_ambiguous: bool = False  # last live match was ambiguous (gates predictive end)
         self._match_prefix_ambiguous: bool = False  # longer candidate with good shape exists (prefix guard)
+        # Last logged reason a due Smart Termination was blocked, so the debug
+        # line below fires on change instead of on every reading of a long tail.
+        self._smart_block_last_reason: str = ""
 
         # Anti-wrinkle tracking (dryers only)
         self._anti_wrinkle_candidate_start: datetime | None = None
@@ -635,6 +638,7 @@ class CycleDetector:
         self._last_match_confidence = 0.0
         self._match_ambiguous = False
         self._match_prefix_ambiguous = False
+        self._smart_block_last_reason = ""
         self._ignore_power_until_idle = False  # Reset lockout
         self._lockout_high_seconds = 0.0
         # Clear the verified-pause flag so it can't leak into the next cycle (B6):
@@ -1333,6 +1337,39 @@ class CycleDetector:
                     is_confident_match = (
                         getattr(self, "_last_match_confidence", 0.0) >= 0.4
                     )
+
+                    # Surface *why* a due Smart Termination did not fire.  All three
+                    # gates below are silent, so from the log a blocked fast path is
+                    # indistinguishable from "not due yet" - the cycle simply sits in
+                    # ENDING until the fallback timeout, and the user sees only a late
+                    # finish with no stated cause.  Logged on reason *change* so a long
+                    # low-power tail cannot flood the log.  Diagnostic only.
+                    # Requires a real expected duration: with _expected_duration == 0
+                    # the duration arm is trivially true and "due" would be a lie.
+                    if self._expected_duration > 0 and current_duration >= (
+                        self._expected_duration * smart_ratio
+                    ):
+                        blockers: list[str] = []
+                        if not is_confident_match:
+                            blockers.append(
+                                "confidence %.2f < 0.4"
+                                % getattr(self, "_last_match_confidence", 0.0)
+                            )
+                        if self._match_ambiguous:
+                            blockers.append("ambiguous match (top-1/top-2 gap below margin)")
+                        if self._match_prefix_ambiguous:
+                            blockers.append("prefix-ambiguous (longer look-alike profile in pool)")
+                        block_reason = "; ".join(blockers)
+                        if block_reason and block_reason != self._smart_block_last_reason:
+                            self._logger.debug(
+                                "Smart Termination due for '%s' (duration %.0fs >= %.0fs) "
+                                "but blocked: %s",
+                                self._matched_profile,
+                                current_duration,
+                                self._expected_duration * smart_ratio,
+                                block_reason,
+                            )
+                        self._smart_block_last_reason = block_reason
 
                     # Gate the predictive end on match certainty.
                     # _match_ambiguous: top-1 vs top-2 score gap is too small to
