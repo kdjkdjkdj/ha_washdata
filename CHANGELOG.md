@@ -5,6 +5,17 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.3.5 - 2026-08-01 (fork build)
+
+Fork build on top of upstream 0.5.3. One-line behaviour fix in a path every installation walks, found by measuring the first cycle that ran the 0.5.3.4 fixes end to end.
+
+### Fixed
+
+- **The async-offload matcher no longer wipes the live match confidence** (`manager.py`): `profile_matcher_wrapper` offloads the real matching to a task and then returned the placeholder `(None, 0.0, 0.0, None)`. Its own docstring said `Returns: None (async offload)`, and the detector's contract is explicit — `CycleDetector._try_profile_match` calls `update_match()` only `if result`, precisely so an offloading matcher can report "nothing synchronous, I will call you back". A non-empty tuple is truthy, so every match trigger fed `(None, 0.0, 0.0, None)` into `update_match()`: `confidence = 0.0` overwrote `_last_match_confidence`, `_sanitize_expected_duration(0.0)` returned the invalid sentinel, and because `match_name` was `None` neither the mismatch-revert nor the set branch ran — `_matched_profile` and `_expected_duration` stayed put. The result is a detector that believes it has a profile with a valid expected duration but zero confidence in it. Smart Termination's own gate (`confidence >= 0.4`) then blocks the fast path it just declared due, and `_should_defer_finish` bails out on the same value, so the cycle falls through to the power-based timeout.
+  Measured on a live dishwasher cycle (2026-07-31, 19:10:49 → 22:23:29, 941 samples): 44 `invalid raw_expected_duration 0.0 (<= 0)` lines in a single cycle, never once the `match ignored` line that a genuine rejection would log, and at the end `Smart Termination due for 'Eco (Standard)' (duration 12790s >= 11427s) but blocked: confidence 0.00 < 0.4` — while the manager's own log line 27 ms later reported `confidence=0.719` for the same profile. Cost on that cycle: 15 minutes, and a `timeout` termination where `smart` was due.
+  The synchronous manual-program path keeps returning its tuple; only the two async/no-op paths now return `None`, and the signature admits it (`| None`).
+- **Test coverage for the offload contract** (`tests/test_matcher_wrapper_async_offload.py`): four tests, three of which fail without the fix. One asserts the field failure directly — a detector holding a 0.788 match keeps it across a match trigger — and one guards the opposite direction, that the manual override still delivers a synchronous match.
+
 ## 0.5.3.4 - 2026-07-29 (fork build)
 
 Fork build on top of upstream 0.5.3. Behaviour change — larger than 0.5.3.3, and the one that actually shortens a stuck cycle.

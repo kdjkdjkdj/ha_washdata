@@ -97,6 +97,12 @@ except ModuleNotFoundError as exc:
 
 # The release condition in manager.py: verified_pause is lifted once the mapped
 # position passes this fraction of the reference duration.
+#
+# NOTE: the "reachable" check below measures the threshold as
+# ``RELEASE_RATIO * avg_duration`` -- the condition as shipped in upstream 0.5.3.
+# A build that divides by the envelope span instead makes that threshold
+# reachable by construction, so on such a build a FAIL here is a statement about
+# stock 0.5.3, not about the code actually running.
 RELEASE_RATIO = 0.95
 
 # Check 2: mean absolute deviation between "where the trace maps" and "how far

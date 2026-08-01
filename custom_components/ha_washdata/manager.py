@@ -764,10 +764,19 @@ class WashDataManager:
 
         def profile_matcher_wrapper(
             readings: list[tuple[datetime, float]],
-        ) -> tuple[str | None, float, float, str | None]:
+        ) -> tuple[str | None, float, float, str | None] | None:
             """Wraps profile store matching logic with detector callback signature.
 
-            Returns: None (async offload)
+            Returns a match tuple only for the synchronous manual-program path.
+            Every other path returns ``None``, which is the detector's contract
+            for "no synchronous result - update_match() will be called later"
+            (see ``CycleDetector._try_profile_match``).  A placeholder tuple must
+            NOT be returned here: it is truthy, so the detector would feed
+            ``(None, 0.0, 0.0, None)`` into ``update_match()`` and reset
+            ``_last_match_confidence`` to 0.0 on every match trigger while the
+            matched profile and its expected duration stay set.  Smart
+            Termination then reports "due ... but blocked: confidence 0.00 <
+            0.4" and the cycle falls back to the power timeout.
             """
             # Manual program override
             if self._manual_program_active and self._current_program:
@@ -791,13 +800,13 @@ class WashDataManager:
                 )
 
             if not readings:
-                return (None, 0.0, 0.0, None)
+                return None
 
             # Snapshotted for thread safety indirectly by task logic
             # We don't need a wrapper task if we unify with _update_estimates matching
             # but for now let's keep the detector callback as a trigger
             self._spawn_tracked(self._async_perform_combined_matching(readings))
-            return (None, 0.0, 0.0, None)
+            return None
 
         self.detector = CycleDetector(
             config,
