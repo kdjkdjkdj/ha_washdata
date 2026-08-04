@@ -5,6 +5,18 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.3.7 - 2026-08-04 (fork build)
+
+Fork build on top of upstream 0.5.3. Addresses the root cause behind a family of "the integration stops noticing my appliance" reports ([#329](https://github.com/3dg1luk43/ha_washdata/issues/329), [#197](https://github.com/3dg1luk43/ha_washdata/issues/197)): the power sensor was subscribed to state *changes* only, so a sensor that keeps publishing an unchanged value was never heard from again.
+
+### Fixed
+
+- **Subscribe to state reports alongside state changes** (`manager.py`): Home Assistant splits sensor updates into two events. `EVENT_STATE_CHANGED` fires when the value differs from the previous one; `EVENT_STATE_REPORTED` fires when the same value is published again, updating only `last_reported`. The integration subscribed via `async_track_state_change_event` exclusively — `async_track_state_report_event` appeared nowhere in the codebase — so it went deaf precisely when an appliance settled at standby and the reading stopped moving. The updates do reach Home Assistant; they were simply never delivered to the integration. Every timer that only advances from inside `process_reading` (the pause/end accumulators, the anti-wrinkle idle timeout, the 2 h safety cap) freezes for the duration of that apparent silence, which is why the existing keepalive machinery had to synthesise readings that were, in fact, already arriving. Measured on a Tasmota plug configured to publish every 10 s (`TelePeriod 10`, `PowerDelta 0`): 260 telemetry packets produced **6** state changes in 44 minutes; at another point the same sensor reported continuously for 13.2 hours while `last_changed` never moved. The report subscription is attached at setup, re-attached when the configured power sensor is swapped, and torn down on unload, mirroring the change subscription in all three places. Both events carry `new_state`; the report event has no `old_state`, which `_async_power_changed` already tolerates (it reads it via `.get()` and falls back to the last known raw value), so the handler is shared unchanged and the diff stays confined to subscription management.
+
+### Added
+
+- **Debug logging for the anti-wrinkle idle timer** (`cycle_detector.py`): the exit from `anti_wrinkle` is gated by `max(_dynamic_end_threshold, anti_wrinkle_idle_timeout)`, where the first term derives from `3 x p95` of the recent reading cadence. Neither term was logged, so when the state lingered there was no way to tell which one dominated, nor what cadence the detector had actually observed. Measured on a dryer, the state was held for 300 s where the configured floor is 120 s, and the cadence term could only be guessed by working backwards from transition timestamps — an inference that proved wrong twice. One debug line per low-power reading in `anti_wrinkle` now carries the accumulated idle time, the effective threshold and both candidate terms. No new computation and no behaviour change: every value already exists at that point.
+
 ## 0.5.3.6 - 2026-08-02 (fork build)
 
 Fork build on top of upstream 0.5.3. Contains **upstream PR #340 by @sharkyy**, cherry-picked ahead of review so it can be validated on real hardware while the maintainer is away. Two commits taken (`57f1be9`, `626e62b`); an unrelated startup/notify commit from the same branch was deliberately left out.
