@@ -40,6 +40,7 @@ from homeassistant.core import Context, Event, HomeAssistant, State, callback
 from homeassistant.helpers.event import (
     async_call_later,
     async_track_state_change_event,
+    async_track_state_report_event,
     async_track_time_interval,
 )
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -829,6 +830,7 @@ class WashDataManager:
         self._terminal_drop_refresh_n: int | None = None
 
         self._remove_listener = None
+        self._remove_report_listener = None
         self._remove_external_trigger_listener = None  # External cycle end trigger
         self._remove_watchdog = None
         self._watchdog_interval = int(
@@ -1816,6 +1818,15 @@ class WashDataManager:
         self._remove_listener = async_track_state_change_event(
             self.hass, [self.power_sensor_entity_id], self._async_power_changed
         )
+        # Also subscribe to state *reports*. A sensor that keeps publishing the
+        # same value emits EVENT_STATE_REPORTED, not EVENT_STATE_CHANGED, so a
+        # change-only subscription goes deaf exactly when the appliance flatlines
+        # at standby: the readings do arrive at Home Assistant, they are simply
+        # never delivered here. Both events carry new_state; the report event has
+        # no old_state, which _async_power_changed already tolerates.
+        self._remove_report_listener = async_track_state_report_event(
+            self.hass, [self.power_sensor_entity_id], self._async_power_changed
+        )
 
         # Attempt to restore state (BEFORE starting listener)
         await self._attempt_state_restoration()
@@ -1938,8 +1949,13 @@ class WashDataManager:
                 # Remove old listener
                 if self._remove_listener:
                     self._remove_listener()
-                # Attach new listener
+                if self._remove_report_listener:
+                    self._remove_report_listener()
+                # Attach new listeners
                 self._remove_listener = async_track_state_change_event(
+                    self.hass, [self.power_sensor_entity_id], self._async_power_changed
+                )
+                self._remove_report_listener = async_track_state_report_event(
                     self.hass, [self.power_sensor_entity_id], self._async_power_changed
                 )
                 # Force update from new sensor
@@ -2321,6 +2337,8 @@ class WashDataManager:
             await asyncio.gather(*_to_await, return_exceptions=True)
         if self._remove_listener:
             self._remove_listener()
+        if self._remove_report_listener:
+            self._remove_report_listener()
         if self._remove_external_trigger_listener:
             self._remove_external_trigger_listener()
         if self._remove_door_sensor_listener:

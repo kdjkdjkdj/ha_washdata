@@ -716,3 +716,42 @@ def test_cycle_start_event_respects_notify_fire_events_toggle(
 
     mock_hass.bus.async_fire.assert_not_called()
 
+
+
+@pytest.mark.asyncio
+async def test_reload_config_subscribes_to_state_reports(
+    mock_hass: Any, mock_entry: Any
+) -> None:
+    """A power sensor that keeps publishing the same value emits state *reports*,
+    not state changes. Both subscriptions must be wired, otherwise the integration
+    goes deaf exactly when the appliance flatlines at standby."""
+    with patch("custom_components.ha_washdata.manager.ProfileStore"), \
+         patch("custom_components.ha_washdata.manager.CycleDetector"), \
+         patch("custom_components.ha_washdata.manager.async_track_state_change_event"), \
+         patch("custom_components.ha_washdata.manager.async_track_state_report_event") as mock_report:
+        mgr = WashDataManager(mock_hass, mock_entry)
+        mgr.profile_store.get_suggestions = MagicMock(return_value={})
+        mgr.profile_store.get_duration_ratio_limits = MagicMock(return_value=(0.7, 1.3))
+        mgr.profile_store.set_duration_ratio_limits = MagicMock()
+        mgr.profile_store.get_active_cycle = MagicMock(return_value={"manual_program": False})
+        mgr.profile_store.get_past_cycles = MagicMock(return_value=[])
+        mgr.profile_store.get_last_active_save = MagicMock(return_value=None)
+        mgr.profile_store.async_clear_active_cycle = AsyncMock()
+        mgr._setup_maintenance_scheduler = AsyncMock()
+        mgr.detector.state = STATE_OFF
+
+        mock_state = MagicMock()
+        mock_state.state = "10.5"
+        mock_hass.states.get = MagicMock(return_value=mock_state)
+
+        new_entry = MagicMock()
+        new_entry.entry_id = "test_entry"
+        new_entry.options = {CONF_POWER_SENSOR: "sensor.new_power"}
+        new_entry.data = {}
+
+        mock_report.reset_mock()
+        await mgr.async_reload_config(new_entry)
+
+        assert mgr.power_sensor_entity_id == "sensor.new_power"
+        assert mock_report.called, "state *report* subscription was not attached"
+        assert mock_report.call_args.args[1] == ["sensor.new_power"]
