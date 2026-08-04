@@ -852,6 +852,16 @@ class CycleDetector:
                         self._dynamic_end_threshold,
                         float(self._config.anti_wrinkle_idle_timeout),
                     )
+                    self._logger.debug(
+                        "Anti-wrinkle idle timer: accumulated=%.0fs threshold=%.0fs "
+                        "(dynamic_end=%.0fs, p95_dt=%.1fs, idle_timeout=%.0fs) dt=%.1fs",
+                        self._anti_wrinkle_idle_time,
+                        anti_wrinkle_end_threshold,
+                        self._dynamic_end_threshold,
+                        self._p95_dt,
+                        float(self._config.anti_wrinkle_idle_timeout),
+                        dt,
+                    )
                     if self._anti_wrinkle_idle_time >= anti_wrinkle_end_threshold:
                         self._transition_to(STATE_OFF, timestamp)
                         return
