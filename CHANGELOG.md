@@ -5,6 +5,14 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.3.8 - 2026-08-05 (fork build)
+
+Fork build on top of upstream 0.5.3. Diagnostics only - no behaviour change. Closes the last blind spot in the Smart Termination gate chain, found while establishing why a healthy dishwasher cycle finished via the fallback path.
+
+### Added
+
+- **A fallback finish now states how far the Smart-Termination confirmation window got** (`cycle_detector.py`): Smart Termination is gated by four conditions. Three of them - match confidence, ambiguous match and prefix-ambiguous match - already emit a `Smart Termination due ... but blocked: ...` line. The fourth, `_time_in_state >= smart_debounce`, is silent, so a cycle that closes via the fallback timeout *with a perfectly healthy match* is indistinguishable in the log from one that never became due. Measured on a dishwasher (2026-08-05): the cycle entered `ENDING` at 10:50:00 and the fallback path finished it at 10:52:00, leaving the window at 120 s of the required 300 s; no blocker line appeared - correctly, none of the three gates was closed - and the cause could only be established by reading the source and reasoning about which gate does not log. This matters more as reading cadence improves: the fixed 300 s window is measured from entry into `ENDING`, and with a dense reading stream that state is now routinely shorter than the window, so on those installations Smart Termination can no longer become eligible at all. That is worth seeing in a log line rather than inferring from timestamps. One debug line per cycle, emitted only when the termination reason is the fallback timeout and a profile was matched; a cycle that ends via Smart Termination stays quiet. The per-device window computation moves into `_smart_termination_debounce_seconds()` so the diagnostic reports the number the gate actually used rather than a second copy of the formula.
+
 ## 0.5.3.7 - 2026-08-04 (fork build)
 
 Fork build on top of upstream 0.5.3. Addresses the root cause behind a family of "the integration stops noticing my appliance" reports ([#329](https://github.com/3dg1luk43/ha_washdata/issues/329), [#197](https://github.com/3dg1luk43/ha_washdata/issues/197)): the power sensor was subscribed to state *changes* only, so a sensor that keeps publishing an unchanged value was never heard from again.
