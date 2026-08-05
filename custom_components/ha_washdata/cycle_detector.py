@@ -1400,32 +1400,12 @@ class CycleDetector:
                         and not self._match_ambiguous
                         and not self._match_prefix_ambiguous
                     ):
-                        # Dynamic confirmation window
-                        if self._config.device_type == "dishwasher":
-                            # Fixed - NOT off_delay-derived.  off_delay is sized to
-                            # bridge the long drying "pause", but must not delay the
-                            # end; see DISHWASHER_SMART_TERMINATION_DEBOUNCE_SECONDS.
-                            smart_debounce = DISHWASHER_SMART_TERMINATION_DEBOUNCE_SECONDS
-                        elif self._config.device_type in (
-                            DEVICE_TYPE_WASHING_MACHINE,
-                            DEVICE_TYPE_WASHER_DRYER,
-                        ):
-                            # Washing machines and washer-dryers have soak and
-                            # rinse gaps that can dip for several minutes between
-                            # programme phases.  Require quiet time equal to half
-                            # the soak-bridging min_off_gap before committing
-                            # Smart Termination, so a near-duplicate profile
-                            # doesn't cut a long cycle short during a mid-cycle
-                            # power trough.  Bounded above so a large suggested /
-                            # hand-set min_off_gap can't inflate the quiet-time
-                            # requirement and starve end-detection (see
-                            # WASHER_SMART_TERMINATION_DEBOUNCE_MAX_SECONDS).
-                            smart_debounce = min(
-                                WASHER_SMART_TERMINATION_DEBOUNCE_MAX_SECONDS,
-                                max(180.0, self._config.min_off_gap * 0.5),
-                            )
-                        else:
-                            smart_debounce = 120.0
+                        # Dynamic confirmation window; the per-device
+                        # rationale lives in
+                        # _smart_termination_debounce_seconds().
+                        smart_debounce = (
+                            self._smart_termination_debounce_seconds()
+                        )
 
                         if self._time_in_state >= smart_debounce:
                             # --- END SPIKE WAIT PERIOD (Dishwashers) ---
@@ -2240,6 +2220,35 @@ class CycleDetector:
         # Tertiary check: If duration exceeded max tolerance, allow finish (failsafe).
         return False
 
+    def _smart_termination_debounce_seconds(self) -> float:
+        """Confirmation window Smart Termination must sit out before it fires.
+
+        Dishwashers use a FIXED window - ``off_delay`` is legitimately sized
+        large to bridge the long passive drying phase, but must not delay the
+        end (see :data:`DISHWASHER_SMART_TERMINATION_DEBOUNCE_SECONDS`).
+
+        Washing machines and washer-dryers have soak and rinse gaps that can
+        dip for several minutes between programme phases, so they require quiet
+        time equal to half the soak-bridging ``min_off_gap`` before committing,
+        bounded above so a large suggested / hand-set ``min_off_gap`` cannot
+        inflate the requirement and starve end-detection (see
+        :data:`WASHER_SMART_TERMINATION_DEBOUNCE_MAX_SECONDS`).
+
+        Extracted so the fallback-finish diagnostic can report the very number
+        the gate used instead of duplicating the formula.
+        """
+        if self._config.device_type == "dishwasher":
+            return DISHWASHER_SMART_TERMINATION_DEBOUNCE_SECONDS
+        if self._config.device_type in (
+            DEVICE_TYPE_WASHING_MACHINE,
+            DEVICE_TYPE_WASHER_DRYER,
+        ):
+            return min(
+                WASHER_SMART_TERMINATION_DEBOUNCE_MAX_SECONDS,
+                max(180.0, self._config.min_off_gap * 0.5),
+            )
+        return 120.0
+
     def _finish_cycle(
         self,
         timestamp: datetime,
@@ -2268,6 +2277,26 @@ class CycleDetector:
         if not self._current_cycle_start:
             self.reset()
             return
+
+        # Smart Termination has four gates.  Three of them - confidence,
+        # ambiguous match, prefix-ambiguous match - already log why they
+        # blocked; the confirmation window is silent.  A fallback finish with a
+        # healthy match is therefore indistinguishable in the log from one that
+        # never became due.  Report how far the window got, once per cycle, and
+        # only when the fast path did not take it.
+        if (
+            termination_reason == TerminationReason.TIMEOUT
+            and self._matched_profile
+            and self._expected_duration > 0
+        ):
+            self._logger.debug(
+                "Fallback finish for '%s' in state %s: smart-termination "
+                "debounce reached %.0fs of %.0fs required",
+                self._matched_profile,
+                self._state,
+                self._time_in_state,
+                self._smart_termination_debounce_seconds(),
+            )
 
         duration = (end_time - self._current_cycle_start).total_seconds()
 
