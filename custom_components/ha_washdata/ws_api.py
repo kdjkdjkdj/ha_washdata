@@ -242,41 +242,74 @@ _ML_COMPARE_SETTINGS: tuple[tuple[str, str, str], ...] = (
 )
 
 
-def _downsample(samples: Any, max_points: int = 240) -> list[list[float]]:
-    """Reduce a [(offset_s, watts), ...] series to <= max_points via striding.
+# Point budget for the single-cycle inspector (the trim and split views). Those
+# are the two places where the user reads an offset off the drawn curve and that
+# offset is then applied to the FULL-resolution stored data, so a decimated curve
+# there is not a cosmetic simplification - it is wrong input to a destructive,
+# irreversible operation. Measured on a live install (2026-08-06): 151 stored
+# cycles across three appliances, the largest 1009 samples, ~14 KB as JSON. A
+# WebSocket reply carries that without trouble; Home Assistant's 32 KB limit
+# applies to fired events, not to WS responses. The much smaller default budget
+# stays in place for the overview charts, where many curves are drawn at once.
+_INSPECTOR_MAX_POINTS = 2000
 
-    Keeps the first and last samples so the time axis is preserved. Power curves
-    can hold thousands of points; the panel only needs enough to draw a faithful
-    line, and WebSocket payloads should stay lean.
+
+def _downsample(samples: Any, max_points: int = 240) -> list[list[float]]:
+    """Reduce a [(offset_s, watts), ...] series to <= max_points, keeping extremes.
+
+    Series at or below the budget are returned untouched. Above it, the series is
+    cut into buckets and BOTH the lowest and the highest reading of each bucket
+    are kept, in their original time order, plus the very first and last sample.
+
+    This replaces plain striding (every n-th sample), which was cheaper but could
+    drop a local extreme outright. That is not hypothetical: a dishwasher's
+    self-shutdown is a single 0 W sample sitting between two ~12 W readings, and
+    striding dropped two of the four zeros in a real 376-sample curve
+    (2026-08-06). A curve that has lost its zero makes a finished cycle look like
+    one that never stopped, and it is exactly the sample a trim needs to aim at.
+    A zero is always the minimum of its bucket, so min/max decimation cannot lose
+    it.
+
+    The trade-off is deliberate: long flat plateaus collapse to one or two points
+    per bucket, so the drawn points can sit further apart in time than striding
+    would have placed them. Callers that must not mistake that for a measurement
+    gap should report `decimated` alongside the data (see ws_get_cycle_power_data).
     """
     try:
-        pairs = list(samples or [])
+        raw = list(samples or [])
     except TypeError:
         return []
+
+    # Parse once, up front. A row that will not parse is DROPPED, never coerced
+    # to 0 W: a fabricated zero is precisely the sample the trim view aims at,
+    # so inventing one would be worse than showing one point fewer.
+    pairs: list[list[float]] = []
+    for item in raw:
+        try:
+            pairs.append([round(float(item[0]), 2), round(float(item[1]), 1)])
+        except (TypeError, ValueError, IndexError):
+            continue
+
     n = len(pairs)
     if n == 0:
         return []
-
-    def _pt(item: Any) -> list[float]:
-        return [round(float(item[0]), 2), round(float(item[1]), 1)]
-
     if n <= max_points:
-        return [_pt(it) for it in pairs]
+        return pairs
 
-    step = n / float(max_points)
-    out: list[list[float]] = []
-    last_i = -1
-    idx = 0.0
-    while int(idx) < n:
-        i = int(idx)
-        if i != last_i:
-            out.append(_pt(pairs[i]))
-            last_i = i
-        idx += step
-    last_pt = _pt(pairs[-1])
-    if not out or out[-1][0] != last_pt[0]:
-        out.append(last_pt)
-    return out
+    # Two points per bucket, minus the two endpoints that are always kept, so the
+    # result can never exceed the caller's budget.
+    buckets = max(1, (max_points - 2) // 2)
+    step = n / float(buckets)
+    keep: set[int] = {0, n - 1}
+    for b in range(buckets):
+        lo = int(b * step)
+        hi = min(n, int((b + 1) * step))
+        if lo >= hi:
+            continue
+        span = range(lo, hi)
+        keep.add(min(span, key=lambda i: pairs[i][1]))
+        keep.add(max(span, key=lambda i: pairs[i][1]))
+    return [pairs[i] for i in sorted(keep)]
 
 
 async def _recorder_power(hass: HomeAssistant, entity_id: str, start_dt: Any) -> list[tuple[float, float]]:
@@ -3524,10 +3557,16 @@ async def ws_get_cycle_power_data(
     except Exception as exc:  # pylint: disable=broad-exception-caught
         _LOGGER.debug("Error getting cycle power data %s: %s", cycle_id, exc)
 
+    drawn = _downsample(samples, _INSPECTOR_MAX_POINTS)
     _send_result(connection, msg["id"], "get_cycle_power_data", {
             "cycle_id": cycle_id,
-            "samples": _downsample(samples),
+            "samples": drawn,
             "full_duration_s": round(float(samples[-1][0]), 1) if samples else 0.0,
+            # The inspector drives trim and split, so it must be able to tell the
+            # user when it is not showing every sample. Silent decimation reads as
+            # completeness and has produced a wrong trim target before.
+            "sample_count": len(samples),
+            "decimated": len(drawn) < len(samples),
             **meta,
         },
     )
@@ -3651,13 +3690,16 @@ async def ws_analyze_split(
         split_offsets = (
             [round(float(s[1]), 1) for s in segs[:-1]] if segs and len(segs) > 1 else []
         )
+        drawn = _downsample(samples, _INSPECTOR_MAX_POINTS)
         _send_result(connection, msg["id"], "analyze_split", {
                 "segments": [
                     [round(float(a), 1), round(float(b), 1)] for a, b in (segs or [])
                 ],
                 "split_offsets": split_offsets,
-                "samples": _downsample(samples),
+                "samples": drawn,
                 "full_duration_s": round(float(samples[-1][0]), 1) if samples else 0.0,
+                "sample_count": len(samples),
+                "decimated": len(drawn) < len(samples),
             },
         )
     except Exception as exc:  # pylint: disable=broad-exception-caught
