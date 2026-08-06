@@ -179,6 +179,53 @@ check('modal: profile-group (edit)', () => { el._modal = { type: 'profile-group'
 check('modal: cycle-detail review', () => { el._modal = { type: 'cycle-detail', mode: 'review', loaded: true, cycleId: 'c1', curve: { samples: [[0, 1], [10, 2]], full_duration_s: 1000, duration: 1000, profile_name: 'Cotton 60', start_time: new Date().toISOString(), artifacts: [{ type: 'pause', start_s: 300, end_s: 420, detail: 'Power dropped to near zero for ~120s then resumed — likely the door was opened.', severity: 0.4 }] }, ml: null }; return el._htmlModal(); });
 check('modal: cycle-detail inspect (draw w/ artifacts)', () => { el._modal = { type: 'cycle-detail', mode: 'view', loaded: true, cycleId: 'c1', curve: { samples: [[0, 900], [300, 950], [360, 3], [420, 940], [1000, 900]], full_duration_s: 1000, profile_name: 'Cotton 60', start_time: new Date().toISOString(), artifacts: [{ type: 'pause', start_s: 300, end_s: 420, detail: 'door opened', severity: 0.4 }] }, ml: null }; const h = el._htmlModal(); el._drawCycleEditor(); return h; });
 check('modal: cycle-detail inspect (with restart gap)', () => { const now = new Date(); el._modal = { type: 'cycle-detail', mode: 'view', loaded: true, cycleId: 'c2', curve: { samples: [[0, 900], [200, 950], [600, 920], [1000, 10]], full_duration_s: 1000, profile_name: 'Cotton 60', start_time: new Date(now - 1000000).toISOString(), restart_gaps: [{ start_ts: new Date(now - 600000).toISOString(), end_ts: new Date(now - 400000).toISOString(), gap_seconds: 200, profile: 'Cotton 60', match_confidence: 0.78 }] }, ml: null }; const h = el._htmlModal(); el._drawCycleEditor(); return h; });
+// Trim boundary precision. The offsets below are the real tail of a dishwasher
+// cycle recorded 2026-08-06: the machine's self-shutdown is the single 0.0 W
+// sample at 3132.0 s, and the panel used to round the boundary to whole seconds
+// with no snapping, so a drag ending at 3131.6 s - or a typed 3132 against a
+// sample at 3132.3 - silently cut the very edge the trim was aiming at. The trim
+// call is irreversible, so this is pinned.
+const _trimCurve = () => ({
+  type: 'cycle-detail', mode: 'trim', loaded: true, cycleId: 'c1', ml: null,
+  curve: {
+    samples: [[0, 6.6], [3122.3, 11.7], [3132.0, 0.0], [3132.3, 0.0], [3152.0, 0.5], [3352.3, 0.5]],
+    full_duration_s: 3352.3, sample_count: 6, decimated: false,
+    start_time: new Date().toISOString(),
+  },
+  trim: { start: 0, end: 3352.3 },
+});
+
+check('trim: a dragged boundary snaps onto a real sample', () => {
+  el._modal = _trimCurve();
+  el._modal.trim.end = 3131.6;              // where a pointer drag lands
+  el._snapTrimBounds();
+  if (el._modal.trim.end !== 3132.0) throw new Error('expected 3132.0, got ' + el._modal.trim.end);
+});
+
+check('trim: a whole-second entry snaps to the nearest sample, not below it', () => {
+  el._modal = _trimCurve();
+  el._modal.trim.end = 3132;                // what the old rounded input produced
+  el._snapTrimBounds();
+  if (el._modal.trim.end !== 3132.0) throw new Error('expected 3132.0, got ' + el._modal.trim.end);
+});
+
+check('trim: the readout names the sample that survives', () => {
+  el._modal = _trimCurve();
+  el._modal.trim.end = 3132.0;
+  const out = el._trimReadout();
+  if (!/3132\.0 s/.test(out)) throw new Error('boundary offset missing: ' + out);
+  if (!/0\.0 W/.test(out)) throw new Error('boundary wattage missing: ' + out);
+  if (!/3 \/ 6/.test(out)) throw new Error('kept/total count missing: ' + out);
+});
+
+check('trim: offsets are formatted to a tenth of a second', () => {
+  el._modal = _trimCurve();
+  if (el._fmtTrimOffset(3132.29) !== '3132.3') throw new Error(el._fmtTrimOffset(3132.29));
+  if (el._fmtTrimOffset(3132) !== '3132.0') throw new Error(el._fmtTrimOffset(3132));
+});
+
+check('modal: cycle-detail trim', () => { el._modal = _trimCurve(); return el._htmlModal(); });
+
 check('modal: profile-panel stats', () => { el._modal = { type: 'profile-panel', name: 'Cotton 60', tab: 'stats', loaded: true, stats: el._profiles[0], env: {} }; return el._htmlModal(); });
 check('modal: compare-cycles (html + draw)', () => {
   el._cycles = [

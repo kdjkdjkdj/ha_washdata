@@ -8035,10 +8035,13 @@ class HaWashdataPanel extends HTMLElement {
     } else if (m.mode === 'trim') {
       const busy = this._busy.has('cyc-trim-apply');
       const tm = m.timeMode || 's';
-      const sv = tm === 'clock' ? this._offsetToClock(m.trim.start) : Math.round(m.trim.start);
-      const ev = tm === 'clock' ? this._offsetToClock(m.trim.end) : Math.round(m.trim.end);
+      const sv = tm === 'clock' ? this._offsetToClock(m.trim.start) : this._fmtTrimOffset(m.trim.start);
+      const ev = tm === 'clock' ? this._offsetToClock(m.trim.end) : this._fmtTrimOffset(m.trim.end);
       const itype = tm === 'clock' ? 'time' : 'number';
-      const iattr = tm === 'clock' ? 'step="1"' : `min="0" max="${Math.ceil(full)}" step="1"`;
+      // Tenth-second steps, not whole seconds: sample offsets are fractional
+      // (10.3 s cadences are normal), and rounding the displayed value to the
+      // second could put the boundary just inside the sample the user aimed at.
+      const iattr = tm === 'clock' ? 'step="1"' : `min="0" max="${Math.ceil(full)}" step="0.1"`;
       const ulbl = tm === 'clock' ? '' : ' ' + this._t('lbl.unit_s', {}, '(s)');
       controls = `<p class="wd-info" style="margin:4px 0 8px">${this._t('msg.trim_intro', {}, 'Drag the red handles, or enter values. Everything outside the window is removed.')}</p>
         <div class="wd-mode-bar" style="margin-bottom:8px;align-items:center">
@@ -8050,6 +8053,7 @@ class HaWashdataPanel extends HTMLElement {
           <div class="wd-field"><label>${this._t('lbl.start', {}, 'Start')}${ulbl}</label><input type="${itype}" id="wd-trim-start" ${iattr} value="${sv}"></div>
           <div class="wd-field"><label>${this._t('lbl.end', {}, 'End')}${ulbl}</label><input type="${itype}" id="wd-trim-end" ${iattr} value="${ev}"></div>
         </div>
+        <div class="wd-info" id="wd-trim-readout" style="margin:2px 0 8px;font-variant-numeric:tabular-nums">${this._trimReadout()}</div>
         <div class="wd-modal-actions">
           <button class="wd-btn wd-btn-secondary" data-maction="cancel">${this._t('btn.close', {}, 'Close')}</button>
           <button class="wd-btn wd-btn-secondary" data-maction="cyc-reset-trim">${this._t('btn.reset', {}, 'Reset')}</button>
@@ -9315,8 +9319,54 @@ class HaWashdataPanel extends HTMLElement {
     const sr = this.shadowRoot, m = this._modal;
     const clock = (m.timeMode || 's') === 'clock';
     const s = sr.getElementById('wd-trim-start'), e = sr.getElementById('wd-trim-end');
-    if (s) s.value = clock ? this._offsetToClock(m.trim.start) : Math.round(m.trim.start);
-    if (e) e.value = clock ? this._offsetToClock(m.trim.end) : Math.round(m.trim.end);
+    if (s) s.value = clock ? this._offsetToClock(m.trim.start) : this._fmtTrimOffset(m.trim.start);
+    if (e) e.value = clock ? this._offsetToClock(m.trim.end) : this._fmtTrimOffset(m.trim.end);
+    const out = sr.getElementById('wd-trim-readout');
+    if (out) out.textContent = this._trimReadout();
+  }
+
+  // One decimal, always: a boundary shown as a whole second when the sample sits
+  // at x.3 invites a trim that cuts the very sample the user is aiming at.
+  _fmtTrimOffset(v) { return (Math.round((v || 0) * 10) / 10).toFixed(1); }
+
+  // Snap a boundary onto a real sample. The trim window is an inclusive filter
+  // over stored samples, so every offset between two samples behaves like the
+  // lower one - but the user is aiming at a point they can see, and a boundary
+  // that lands 0.3 s short of it silently drops it. Snapping makes the choice
+  // and the result the same thing.
+  _snapToSample(offset) {
+    const pts = (this._modal && this._modal.curve && this._modal.curve.samples) || [];
+    if (!pts.length || offset == null) return offset;
+    let best = pts[0][0], bestD = Math.abs(pts[0][0] - offset);
+    for (let i = 1; i < pts.length; i++) {
+      const d = Math.abs(pts[i][0] - offset);
+      if (d < bestD) { bestD = d; best = pts[i][0]; }
+    }
+    return best;
+  }
+
+  _snapTrimBounds() {
+    const m = this._modal;
+    if (!m || !m.trim) return;
+    const s = this._snapToSample(m.trim.start), e = this._snapToSample(m.trim.end);
+    if (s != null && e != null && s < e) { m.trim.start = s; m.trim.end = e; }
+  }
+
+  // What the window will actually keep, in numbers only (no prose, so it needs
+  // no translation): kept/total samples, and the last sample that survives with
+  // its wattage - the readout that turns "I typed a number" into "I can see it
+  // keeps the 0 W edge" before an irreversible operation.
+  _trimReadout() {
+    const m = this._modal;
+    const c = (m && m.curve) || {};
+    const pts = c.samples || [];
+    if (!pts.length || !m.trim) return '';
+    const inside = pts.filter(p => p[0] >= m.trim.start && p[0] <= m.trim.end);
+    if (!inside.length) return '0 / ' + pts.length;
+    const last = inside[inside.length - 1];
+    const total = c.sample_count || pts.length;
+    const partial = c.decimated ? ' \u26a0' : '';
+    return `${inside.length} / ${total}${partial} \u00b7 \u2192 ${last[0].toFixed(1)} s \u00b7 ${last[1].toFixed(1)} W`;
   }
 
   // Trim-input value <-> cycle-offset seconds (supports the clock-time mode).
@@ -9378,7 +9428,12 @@ class HaWashdataPanel extends HTMLElement {
         else m.trim.end = Math.max(x, m.trim.start + 1);
         this._syncTrimInputs(); this._drawCycleEditor();
       });
-      const stop = () => { m.drag = null; };
+      // Snap once the gesture/edit is committed rather than on every pointermove
+      // or keystroke, so dragging stays smooth and a half-typed number is not
+      // yanked to a distant sample mid-entry.
+      if (start) start.addEventListener('change', () => { this._snapTrimBounds(); this._syncTrimInputs(); this._drawCycleEditor(); });
+      if (end) end.addEventListener('change', () => { this._snapTrimBounds(); this._syncTrimInputs(); this._drawCycleEditor(); });
+      const stop = () => { if (m.drag) { m.drag = null; this._snapTrimBounds(); this._syncTrimInputs(); this._drawCycleEditor(); } };
       cyc.addEventListener('pointerup', stop); cyc.addEventListener('pointercancel', stop);
     } else if (m.mode === 'split') {
       cyc.addEventListener('pointerdown', e => {
@@ -10715,6 +10770,9 @@ class HaWashdataPanel extends HTMLElement {
       if (action === 'cyc-apply-trim') {
         // Backgrounded task (issue #311): recompute + envelope rebuild can stall a
         // low-power host, so run it via the registry with a header pill.
+        // Last line of defence: whatever route set the bounds, they leave for the
+        // server sitting on real samples.
+        this._snapTrimBounds();
         const cid = m.cycleId, s = m.trim.start, e2 = m.trim.end;
         this._kickAndTrack(
           { type: `${_DOMAIN}/trim_cycle`, entry_id: eid, cycle_id: cid, start_s: s, end_s: e2 },
