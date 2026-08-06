@@ -755,3 +755,150 @@ async def test_reload_config_subscribes_to_state_reports(
         assert mgr.power_sensor_entity_id == "sensor.new_power"
         assert mock_report.called, "state *report* subscription was not attached"
         assert mock_report.call_args.args[1] == ["sensor.new_power"]
+
+
+# ── heartbeat_interval: stand-in readings for a sensor that stops publishing ──
+#
+# The report subscription above covers a sensor that keeps publishing the same
+# value. These cover the other half: a plug that publishes nothing at all, where
+# neither a change nor a report arrives and every timer fed from process_reading
+# freezes.
+
+
+def _arm_heartbeat(
+    manager: WashDataManager, *, interval: int, quiet_for: float, source_age: float
+) -> tuple[WashDataManager, datetime]:
+    """Arm a manager for a heartbeat tick and return it with the reference "now".
+
+    quiet_for   - seconds since the last reading of any kind reached the manager
+    source_age  - seconds since the sensor itself last reported anything
+
+    The tick reads the clock itself, so offsets are anchored on the real
+    dt_util.now() rather than a frozen stand-in.
+    """
+    now = dt_util.now()
+
+    manager._heartbeat_interval = interval
+    manager._last_reading_time = now - timedelta(seconds=quiet_for)
+    manager._last_real_reading_time = now - timedelta(seconds=quiet_for)
+    manager.recorder = MagicMock(is_recording=False)
+    manager._notify_update = MagicMock()
+    manager.detector.process_reading = MagicMock()
+
+    state = MagicMock()
+    state.state = "12.5"
+    state.last_reported = now - timedelta(seconds=source_age)
+    state.last_updated = state.last_reported
+    manager.hass.states.get = MagicMock(return_value=state)
+    return manager, now
+
+
+def test_heartbeat_is_off_by_default(manager: WashDataManager) -> None:
+    """Default is 0 - no timer, so existing installs behave exactly as before."""
+    with patch(
+        "custom_components.ha_washdata.manager.async_track_time_interval"
+    ) as mock_timer:
+        assert manager._heartbeat_interval == 0
+        manager._start_heartbeat()
+
+    mock_timer.assert_not_called()
+    assert manager._remove_heartbeat is None
+
+
+def test_heartbeat_starts_timer_when_configured(manager: WashDataManager) -> None:
+    """A configured interval schedules the timer at exactly that cadence."""
+    manager._heartbeat_interval = 30
+    with patch(
+        "custom_components.ha_washdata.manager.async_track_time_interval"
+    ) as mock_timer:
+        manager._start_heartbeat()
+
+    assert mock_timer.called
+    assert mock_timer.call_args.args[2] == timedelta(seconds=30)
+    assert manager._remove_heartbeat is not None
+
+
+def test_heartbeat_refeeds_the_current_value_when_the_sensor_is_quiet(
+    manager: WashDataManager,
+) -> None:
+    """Nothing has arrived for four intervals - stand in with what the sensor holds."""
+    mgr, now = _arm_heartbeat(manager, interval=30, quiet_for=120, source_age=5)
+
+    mgr._async_heartbeat_tick(now)
+
+    assert mgr.detector.process_reading.call_count == 1
+    fed_power, fed_at = mgr.detector.process_reading.call_args.args
+    assert fed_power == 12.5
+    assert abs((fed_at - now).total_seconds()) < 5
+    assert mgr._current_power == 12.5
+    assert mgr._last_reading_time >= now
+
+
+def test_heartbeat_does_not_advance_the_real_reading_clock(
+    manager: WashDataManager,
+) -> None:
+    """The guarantee the template-sensor workaround could not give.
+
+    A synthetic reading must not look like a real one, or the watchdog's
+    no_update_active_timeout would never see silence again and a dead plug would
+    go unnoticed for as long as the heartbeat keeps ticking.
+    """
+    mgr, now = _arm_heartbeat(manager, interval=30, quiet_for=120, source_age=5)
+    real_before = mgr._last_real_reading_time
+
+    mgr._async_heartbeat_tick(now)
+
+    assert mgr.detector.process_reading.called
+    assert mgr._last_real_reading_time == real_before
+
+
+def test_heartbeat_stays_silent_when_the_source_itself_went_offline(
+    manager: WashDataManager,
+) -> None:
+    """A stale value must never be re-stamped with a fresh time and fed in."""
+    mgr, now = _arm_heartbeat(manager, interval=30, quiet_for=3600, source_age=3600)
+    assert mgr._no_update_active_timeout < 3600
+
+    mgr._async_heartbeat_tick(now)
+
+    mgr.detector.process_reading.assert_not_called()
+
+
+def test_heartbeat_skips_when_a_real_reading_just_arrived(
+    manager: WashDataManager,
+) -> None:
+    """The sensor is talking - there is nothing to stand in for."""
+    mgr, now = _arm_heartbeat(manager, interval=30, quiet_for=5, source_age=5)
+
+    mgr._async_heartbeat_tick(now)
+
+    mgr.detector.process_reading.assert_not_called()
+
+
+def test_heartbeat_ignores_an_unavailable_sensor(manager: WashDataManager) -> None:
+    """No value to re-feed, and the normal unavailable handling still applies."""
+    mgr, now = _arm_heartbeat(manager, interval=30, quiet_for=120, source_age=5)
+    mgr.hass.states.get.return_value.state = "unavailable"
+
+    mgr._async_heartbeat_tick(now)
+
+    mgr.detector.process_reading.assert_not_called()
+
+
+def test_heartbeat_does_not_intercept_a_recording(manager: WashDataManager) -> None:
+    """Recording mode owns the reading stream; synthetic values would poison it."""
+    mgr, now = _arm_heartbeat(manager, interval=30, quiet_for=120, source_age=5)
+    mgr.recorder.is_recording = True
+
+    mgr._async_heartbeat_tick(now)
+
+    mgr.detector.process_reading.assert_not_called()
+
+
+def test_heartbeat_disabled_never_injects(manager: WashDataManager) -> None:
+    """Belt and braces: even a stray tick with the feature off must do nothing."""
+    mgr, now = _arm_heartbeat(manager, interval=0, quiet_for=3600, source_age=5)
+
+    mgr._async_heartbeat_tick(now)
+
+    mgr.detector.process_reading.assert_not_called()
