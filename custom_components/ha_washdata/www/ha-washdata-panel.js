@@ -58,6 +58,10 @@ const _STORE_PREFS = [
 const _PG_PIN_BAND_H = 34;
 
 // Distinct colors for overlaying many cycle curves (history cleanup).
+// Displayed/entered precision of a trim boundary. Sample offsets are routinely
+// fractional (a 10 s cadence drifts to x.3), so whole seconds would put the
+// boundary just inside the sample the user aimed at.
+const _TRIM_STEP = 0.1;
 const _PALETTE = [
   '#e6194B', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4',
   '#f032e6', '#bfef45', '#fabed4', '#469990', '#dcbeff', '#9A6324',
@@ -8041,7 +8045,7 @@ class HaWashdataPanel extends HTMLElement {
       // Tenth-second steps, not whole seconds: sample offsets are fractional
       // (10.3 s cadences are normal), and rounding the displayed value to the
       // second could put the boundary just inside the sample the user aimed at.
-      const iattr = tm === 'clock' ? 'step="1"' : `min="0" max="${Math.ceil(full)}" step="0.1"`;
+      const iattr = tm === 'clock' ? 'step="1"' : `min="0" max="${Math.ceil(full)}" step="${_TRIM_STEP}"`;
       const ulbl = tm === 'clock' ? '' : ' ' + this._t('lbl.unit_s', {}, '(s)');
       controls = `<p class="wd-info" style="margin:4px 0 8px">${this._t('msg.trim_intro', {}, 'Drag the red handles, or enter values. Everything outside the window is removed.')}</p>
         <div class="wd-mode-bar" style="margin-bottom:8px;align-items:center">
@@ -9345,6 +9349,25 @@ class HaWashdataPanel extends HTMLElement {
     return best;
   }
 
+  // Move a boundary to the neighbouring sample. This is what the spinner arrows
+  // and the up/down keys do, because a trim boundary has no finer granularity
+  // than one sample: every offset between two samples behaves exactly like the
+  // lower one. Stepping by _TRIM_STEP seconds instead would land inside the snap
+  // radius of the sample we are already on, snap straight back, and leave the
+  // control looking broken - which is exactly what it did.
+  _stepTrimBySample(which, dir) {
+    const m = this._modal;
+    const pts = (m && m.curve && m.curve.samples) || [];
+    if (!pts.length || !m.trim || !dir) return;
+    const snapped = this._snapToSample(m.trim[which]);
+    let i = pts.findIndex(p => p[0] === snapped);
+    if (i < 0) return;
+    i = Math.max(0, Math.min(pts.length - 1, i + (dir > 0 ? 1 : -1)));
+    const v = pts[i][0];
+    if (which === 'start' && v < m.trim.end) m.trim.start = v;
+    else if (which === 'end' && v > m.trim.start) m.trim.end = v;
+  }
+
   _snapTrimBounds() {
     const m = this._modal;
     if (!m || !m.trim) return;
@@ -9413,8 +9436,38 @@ class HaWashdataPanel extends HTMLElement {
 
     if (m.mode === 'trim') {
       const start = sr.getElementById('wd-trim-start'), end = sr.getElementById('wd-trim-end');
-      if (start) start.addEventListener('input', () => { m.trim.start = Math.max(0, Math.min(this._trimInputToOffset(start.value), m.trim.end - 1)); this._drawCycleEditor(); });
-      if (end) end.addEventListener('input', () => { m.trim.end = Math.min(m.curve.full_duration_s, Math.max(this._trimInputToOffset(end.value), m.trim.start + 1)); this._drawCycleEditor(); });
+      // A spinner click (and an arrow key, when the browser handles it itself)
+      // changes the value by exactly one `step`. Treat that as "next sample"
+      // rather than as a typed value; anything else is free typing and is only
+      // snapped once the edit is committed.
+      const clamp = (which, v) => which === 'start'
+        ? Math.max(0, Math.min(v, m.trim.end - 1))
+        : Math.min(m.curve.full_duration_s, Math.max(v, m.trim.start + 1));
+      const onInput = (which, el) => {
+        const prev = m.trim[which];
+        const raw = this._trimInputToOffset(el.value);
+        const nudge = (m.timeMode || 's') !== 'clock'
+          && Math.abs(Math.abs(raw - prev) - _TRIM_STEP) < 1e-6;
+        if (nudge) {
+          this._stepTrimBySample(which, raw > prev ? 1 : -1);
+          this._syncTrimInputs();
+        } else {
+          m.trim[which] = clamp(which, raw);
+        }
+        this._drawCycleEditor();
+      };
+      // Arrow keys are handled explicitly so the browser does not also apply its
+      // own tenth-second step on top of the sample move.
+      const onArrow = which => e => {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+        if ((m.timeMode || 's') === 'clock') return;
+        e.preventDefault();
+        this._stepTrimBySample(which, e.key === 'ArrowUp' ? 1 : -1);
+        this._syncTrimInputs();
+        this._drawCycleEditor();
+      };
+      if (start) { start.addEventListener('input', () => onInput('start', start)); start.addEventListener('keydown', onArrow('start')); }
+      if (end) { end.addEventListener('input', () => onInput('end', end)); end.addEventListener('keydown', onArrow('end')); }
       cyc.addEventListener('pointerdown', e => {
         const wd = cyc._wd; if (!wd) return;
         const r = cyc.getBoundingClientRect(); const px = e.clientX - r.left;
