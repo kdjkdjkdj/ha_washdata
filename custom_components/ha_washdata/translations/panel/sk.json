@@ -1320,6 +1320,10 @@
       "doc": "Voliteľný prepínač vypnutý pri pauze a opätovnom zapnutí pri opätovnom spustení, ktorý sa používa spolu s funkciou „Pauza tiež znižuje napájanie“.",
       "label": "Entita prepínača"
     },
+    "heartbeat_interval": {
+      "doc": "Predvolene vypnuté. Niektoré zástrčky po ustálení hodnoty prestanú posielať údaje úplne, takže Home Assistant nedostane vôbec nič a časovače konca cyklu zostanú stáť. Po nastavení intervalu WashData v tejto frekvencii znova podáva hodnotu, ktorú senzor stále drží, a nahrádza tak chýbajúce merania. Mŕtvu zástrčku to neskryje: strážny pes pre stav offline ďalej meria skutočné ticho a senzor, ktorý sa neozval dlhšie, než je Časový limit bez aktualizácie, sa považuje za offline a žiadny signál nedostane. Nastavte hodnotu rovnakú alebo vyššiu ako Interval vzorkovania. 0 ju vypne.",
+      "label": "Interval heartbeat"
+    },
     "watchdog_interval": {
       "doc": "Ako často strážny pes na pozadí kontroluje zablokované senzory a uplynuté časové limity. Predvolených 30 s.",
       "label": "Interval watchdog"

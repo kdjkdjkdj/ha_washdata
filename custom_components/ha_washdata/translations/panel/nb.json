@@ -1348,6 +1348,10 @@
       "doc": "Valgfri bryter slått av på pause og på igjen når du fortsetter, brukt sammen med \"Pause kutter også strømmen\".",
       "label": "Bryterenhet"
     },
+    "heartbeat_interval": {
+      "doc": "Slått av som standard. Noen støpsler slutter helt å sende når måleverdien har stabilisert seg, slik at Home Assistant ikke får noe som helst, og tidsurene ved syklusslutt blir stående. Setter du et intervall, mater WashData i den takten inn på nytt den verdien sensoren fortsatt holder, og erstatter dermed de manglende avlesningene. Det kan ikke skjule et dødt støpsel: offline-vakthunden fortsetter å måle den reelle stillheten, og en sensor som ikke har meldt fra på lengre tid enn Tid uten oppdatering, regnes som frakoblet og får ingen heartbeat i det hele tatt. Hold verdien på eller over Sampling-intervallet. 0 deaktiverer den.",
+      "label": "Heartbeat-intervall"
+    },
     "watchdog_interval": {
       "doc": "Hvor ofte bakgrunnsvakthunden sjekker for stansede sensorer og medgåtte tidsavbrudd. Standard 30 s.",
       "label": "Vokter-intervall"

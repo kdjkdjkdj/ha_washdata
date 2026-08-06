@@ -1320,6 +1320,10 @@
       "doc": "Opcioni prekidač se isključuje u pauzi i ponovo uključuje kada se nastavlja, koristi se zajedno sa „Pauza takođe isključuje napajanje“.",
       "label": "Entiteta prekidača"
     },
+    "heartbeat_interval": {
+      "doc": "Standardno isključeno. Neki utikači potpuno prestanu da šalju podatke kada se očitavanje smiri, pa Home Assistant ne dobija više ništa, a tajmeri za kraj ciklusa stanu. Ako postavite interval, WashData tako često ponovo šalje vrednost koju senzor i dalje drži i time zamenjuje izostala očitavanja. Mrtav utikač se time ne može sakriti: nadzornik za stanje van mreže i dalje meri stvarnu tišinu, a senzor koji se nije javio duže od postavke Vremensko ograničenje bez ažuriranja tretira se kao van mreže i ne dobija nikakav otkucaj. Zadržite vrednost jednaku ili veću od postavke Interval uzorkovanja. 0 to onemogućava.",
+      "label": "Interval otkucaja"
+    },
     "watchdog_interval": {
       "doc": "Koliko često pozadinski nadzornik proverava zastoje senzora i proteklo vremensko ograničenje. Standardno 30 s.",
       "label": "Interval nadzornika"

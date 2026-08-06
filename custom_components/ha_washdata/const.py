@@ -77,6 +77,7 @@ CONF_MAX_PAST_CYCLES = "max_past_cycles"
 CONF_MAX_FULL_TRACES_PER_PROFILE = "max_full_traces_per_profile"
 CONF_MAX_FULL_TRACES_UNLABELED = "max_full_traces_unlabeled"
 CONF_WATCHDOG_INTERVAL = "watchdog_interval"  # Derived from sampling_interval
+CONF_HEARTBEAT_INTERVAL = "heartbeat_interval"  # 0 = off; re-feed a quiet sensor
 CONF_MATCH_PERSISTENCE = "match_persistence"
 CONF_COMPLETION_MIN_SECONDS = "completion_min_seconds"
 CONF_NOTIFY_BEFORE_END_MINUTES = "notify_before_end_minutes"
@@ -268,6 +269,12 @@ DEFAULT_MAX_PAST_CYCLES = 200
 DEFAULT_MAX_FULL_TRACES_PER_PROFILE = 20
 DEFAULT_MAX_FULL_TRACES_UNLABELED = 20
 DEFAULT_WATCHDOG_INTERVAL = 30  # Derived: 2 * sampling_interval + 1
+# Off by default. Opt-in for plugs that stop publishing altogether - neither a
+# state change nor a state report arrives, so every timer that only advances
+# from inside process_reading freezes. When set, the manager re-feeds the value
+# the sensor still holds at this cadence. See WashDataManager._async_heartbeat_tick
+# for the two guards that keep it from masking a dead plug.
+DEFAULT_HEARTBEAT_INTERVAL = 0
 DEFAULT_MATCH_PERSISTENCE = 3
 DEFAULT_END_REPEAT_COUNT = 1  # 1 = current behavior (no repeat required)
 

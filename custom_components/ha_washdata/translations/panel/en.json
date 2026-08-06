@@ -1320,6 +1320,10 @@
       "doc": "Optional switch toggled off on pause and back on when resuming, used together with \"Pause also cuts power\".",
       "label": "Switch Entity"
     },
+    "heartbeat_interval": {
+      "doc": "Off by default. Some plugs stop publishing altogether once the reading settles, so Home Assistant delivers nothing at all and the end-of-cycle timers stall. Set an interval and WashData re-feeds the value the sensor still holds that often, standing in for the missing readings. It cannot hide a dead plug: the offline watchdog keeps measuring real silence, and a sensor that has not reported for longer than the No-Update Timeout is treated as offline and gets no heartbeat at all. Keep it at or above the Sampling Interval. 0 disables it.",
+      "label": "Heartbeat Interval"
+    },
     "watchdog_interval": {
       "doc": "How often the background watchdog checks for stalled sensors and elapsed timeouts. Default 30 s.",
       "label": "Watchdog Interval"

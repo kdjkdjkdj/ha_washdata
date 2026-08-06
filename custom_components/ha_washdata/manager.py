@@ -85,6 +85,7 @@ from .const import (
     CONF_MAX_FULL_TRACES_PER_PROFILE,
     CONF_MAX_FULL_TRACES_UNLABELED,
     CONF_WATCHDOG_INTERVAL,
+    CONF_HEARTBEAT_INTERVAL,
     CONF_AUTO_TUNE_NOISE_EVENTS_THRESHOLD,
     CONF_COMPLETION_MIN_SECONDS,
     CONF_NOTIFY_BEFORE_END_MINUTES,
@@ -210,6 +211,7 @@ from .const import (
     DEFAULT_MAX_FULL_TRACES_UNLABELED,
     DEFAULT_DTW_BANDWIDTH,
     DEFAULT_WATCHDOG_INTERVAL,
+    DEFAULT_HEARTBEAT_INTERVAL,
     CONF_MATCH_PERSISTENCE,
     DEFAULT_MATCH_PERSISTENCE,
     DEFAULT_MATCH_REVERT_RATIO,
@@ -835,6 +837,12 @@ class WashDataManager:
         self._remove_watchdog = None
         self._watchdog_interval = int(
             config_entry.options.get(CONF_WATCHDOG_INTERVAL, DEFAULT_WATCHDOG_INTERVAL)
+        )
+        self._remove_heartbeat = None
+        self._heartbeat_interval = int(
+            config_entry.options.get(
+                CONF_HEARTBEAT_INTERVAL, DEFAULT_HEARTBEAT_INTERVAL
+            )
         )
         self._match_persistence = int(
             config_entry.options.get(CONF_MATCH_PERSISTENCE, DEFAULT_MATCH_PERSISTENCE)
@@ -1827,6 +1835,8 @@ class WashDataManager:
         self._remove_report_listener = async_track_state_report_event(
             self.hass, [self.power_sensor_entity_id], self._async_power_changed
         )
+        # Stand-in readings for sensors that stop publishing entirely (opt-in).
+        self._start_heartbeat()
 
         # Attempt to restore state (BEFORE starting listener)
         await self._attempt_state_restoration()
@@ -2293,6 +2303,22 @@ class WashDataManager:
                 "Updated sampling interval: %.1fs -> %.1fs", old_sampling, new_sampling
             )
 
+        # Update the heartbeat cadence (0 = off). Restart the timer only when the
+        # value actually moved so a settings save unrelated to it never skips a beat.
+        old_heartbeat = self._heartbeat_interval
+        new_heartbeat = int(
+            config_entry.options.get(
+                CONF_HEARTBEAT_INTERVAL, DEFAULT_HEARTBEAT_INTERVAL
+            )
+        )
+        if old_heartbeat != new_heartbeat:
+            self._heartbeat_interval = new_heartbeat
+            self._logger.info(
+                "Updated heartbeat interval: %ss -> %ss", old_heartbeat, new_heartbeat
+            )
+            self._stop_heartbeat()
+            self._start_heartbeat()
+
         # RESTORE STATE (only if recent enough, otherwise treat as stale)
         await self._attempt_state_restoration()
 
@@ -2355,6 +2381,7 @@ class WashDataManager:
         self._cancel_power_off_timer()
         if self._remove_watchdog:
             self._remove_watchdog()
+        self._stop_heartbeat()
         if (
             hasattr(self, "_remove_state_expiry_timer")
             and self._remove_state_expiry_timer
@@ -3053,6 +3080,116 @@ class WashDataManager:
             self._logger.debug("Stopping watchdog timer")
             self._remove_watchdog()
             self._remove_watchdog = None
+
+    def _start_heartbeat(self) -> None:
+        """Start the optional stand-in reading timer (heartbeat_interval > 0).
+
+        Unlike the watchdog this runs for the whole lifetime of the entry, not
+        just while a cycle is active: a sensor that has gone quiet also delays
+        cycle *detection*, and there is no cycle to hang the timer off yet.
+        """
+        if self._remove_heartbeat:
+            return  # Already running
+        if self._heartbeat_interval <= 0:
+            return  # Opt-in feature, off by default
+
+        self._logger.debug(
+            "Starting heartbeat timer (every %ss)", self._heartbeat_interval
+        )
+        self._remove_heartbeat = async_track_time_interval(
+            self.hass,
+            self._async_heartbeat_tick,
+            timedelta(seconds=self._heartbeat_interval),
+        )
+
+    def _stop_heartbeat(self) -> None:
+        """Stop the stand-in reading timer."""
+        if self._remove_heartbeat:
+            self._logger.debug("Stopping heartbeat timer")
+            self._remove_heartbeat()
+            self._remove_heartbeat = None
+
+    @callback
+    def _async_heartbeat_tick(self, _now: datetime) -> None:
+        """Re-feed the sensor's current value when it has gone quiet.
+
+        Home Assistant delivers state *changes* and state *reports*; both are
+        subscribed. A plug that stops publishing altogether produces neither, so
+        the integration hears nothing at all and every timer that advances from
+        inside ``process_reading`` freezes - most visibly the end-of-cycle idle
+        accumulators, which then have to be nudged along by the watchdog's 0 W
+        keepalives. This timer stands in for the missing readings instead, at a
+        fixed cadence, using the value the sensor still holds.
+
+        Two guards keep it from hiding a dead plug - the failure mode of the
+        equivalent template-sensor workaround, which forwards a stale value with
+        a fresh timestamp and thereby silences the only outage detection there is:
+
+        * ``_last_real_reading_time`` is deliberately NOT bumped, so the
+          watchdog's ``no_update_active_timeout`` still measures *real* silence
+          and can still force-stop or inject its own keepalive.
+        * a source whose own ``last_reported`` is older than that timeout is
+          treated as offline and gets no heartbeat at all, so a stale value is
+          never stamped with a fresh time and written into the curve.
+        """
+        interval = self._heartbeat_interval
+        if interval <= 0:
+            return
+        # Recording mode owns the reading stream; never inject into a recording.
+        if self.recorder.is_recording:
+            return
+
+        state = self.hass.states.get(self.power_sensor_entity_id)
+        if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            return
+        try:
+            power = float(state.state)
+        except (TypeError, ValueError):
+            return
+
+        now = dt_util.now()
+
+        # A real reading already covered this window - nothing to stand in for.
+        if (
+            self._last_reading_time
+            and (now - self._last_reading_time).total_seconds() < interval
+        ):
+            return
+
+        # Guard 2: the source itself has been silent longer than the offline
+        # timeout. Re-feeding what it last held would corrupt the curve with a
+        # value that is no longer true and keep the offline path from ever
+        # seeing real silence.
+        last_reported = getattr(state, "last_reported", None) or state.last_updated
+        if (
+            last_reported is not None
+            and (now - last_reported).total_seconds() > self._no_update_active_timeout
+        ):
+            self._logger.debug(
+                "Heartbeat: source silent for %.0fs (> no_update_active_timeout "
+                "%.0fs) - treating as offline, not re-feeding",
+                (now - last_reported).total_seconds(),
+                self._no_update_active_timeout,
+            )
+            return
+
+        quiet_for = (
+            (now - self._last_reading_time).total_seconds()
+            if self._last_reading_time
+            else float(interval)
+        )
+        self._logger.debug(
+            "Heartbeat: no reading for %.0fs, re-feeding %.1f W (every %ss)",
+            quiet_for,
+            power,
+            interval,
+        )
+        # Synthetic reading: it deliberately does not touch diag_buffer or the
+        # learning cadence stats, both of which describe what the *plug* did.
+        self.detector.process_reading(power, now)
+        self._last_reading_time = now
+        self._current_power = power
+        self._notify_update()
 
     def _start_state_expiry_timer(self) -> None:
         """Start timer to reset state to OFF and progress to 0% after idle period."""

@@ -47,7 +47,11 @@ global.document = {
   head: fakeEl(), body: fakeEl(), addEventListener() {},
 };
 global.window = { matchMedia: () => ({ matches: false, addEventListener() {} }), addEventListener() {}, location: {} };
-global.navigator = { language: 'en' };
+// Node >= 21 defines a getter-only global "navigator", so a plain assignment
+// throws. defineProperty works on both old and new runtimes.
+Object.defineProperty(globalThis, 'navigator', {
+  value: { language: 'en' }, configurable: true, writable: true,
+});
 
 let failures = 0;
 function check(label, fn) {

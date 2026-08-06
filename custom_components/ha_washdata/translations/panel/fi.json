@@ -1348,6 +1348,10 @@
       "doc": "Valinnainen kytkin kytketään pois päältä taukotilanteessa ja takaisin päälle, kun jatkat, käytetään yhdessä \"Tauko katkaisee myös virran\" kanssa.",
       "label": "Kytkimen entiteetti"
     },
+    "heartbeat_interval": {
+      "doc": "Oletuksena pois käytöstä. Osa pistokkeista lakkaa lähettämästä päivityksiä kokonaan, kun lukema vakiintuu, jolloin Home Assistantiin ei saavu enää mitään ja syklin päätösajastimet jäävät jumiin. Kun asetat välin, WashData syöttää anturin nykyisen arvon uudelleen näin usein ja paikkaa näin puuttuvat lukemat. Kuollutta pistoketta se ei silti peitä: offline-tarkkailija mittaa edelleen todellista hiljaisuutta, ja anturi, joka ei ole raportoinut Päivityksettömyyden aikakatkaisuaikaa pidempään, tulkitaan offline-tilaan eikä saa sykettä lainkaan. Pidä arvo vähintään yhtä suurena kuin Näytteenottoväli. 0 poistaa toiminnon käytöstä.",
+      "label": "Sykeväli"
+    },
     "watchdog_interval": {
       "doc": "Kuinka usein taustavahti tarkistaa jumiutuneiden antureiden ja kuluneiden aikakatkaisujen varalta. Oletusarvo 30 s.",
       "label": "Tarkkailijaväli"

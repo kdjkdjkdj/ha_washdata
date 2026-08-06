@@ -165,6 +165,8 @@ const _SETTINGS_SECTIONS = [
         doc: 'How often the background watchdog checks for stalled sensors and elapsed timeouts. Default 30 s.' },
       { key: 'no_update_active_timeout', label: 'No-Update Timeout', unit: 's', type: 'number', min: 0, def: 600,
         doc: 'If no power updates arrive for this long while running, assume the plug dropped offline and force-stop to avoid a zombie cycle. Default 600 s allows for cloud or mesh lag.' },
+      { key: 'heartbeat_interval', label: 'Heartbeat Interval', unit: 's', type: 'number', min: 0, def: 0,
+        doc: 'Off by default. Some plugs stop publishing altogether once the reading settles, so Home Assistant delivers nothing at all and the end-of-cycle timers stall. Set an interval and WashData re-feeds the value the sensor still holds that often, standing in for the missing readings. It cannot hide a dead plug: the offline watchdog keeps measuring real silence, and a sensor that has not reported for longer than the No-Update Timeout is treated as offline and gets no heartbeat at all. Keep it at or above the Sampling Interval. 0 disables it.' },
     ] },
     { sub: 'Housekeeping', fields: [
       { key: 'progress_reset_delay', label: 'Progress Reset Delay', unit: 's', type: 'number', min: 0, def: 1800,

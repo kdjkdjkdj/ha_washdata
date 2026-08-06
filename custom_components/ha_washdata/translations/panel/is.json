@@ -1348,6 +1348,10 @@
       "doc": "Valfrjáls rofi slökkt á hléi og aftur kveikt á þegar haldið er áfram, notaður ásamt „Hlé slekkur líka á rafmagni“.",
       "label": "Rofaeining"
     },
+    "heartbeat_interval": {
+      "doc": "Óvirkt sjálfgefið. Sumar innstungur hætta alveg að senda um leið og mæligildið hefur jafnað sig, þannig að Home Assistant fær alls ekkert og tímarnir í lok lotu sitja fastir. Ef þú stillir bil endursendir WashData á þeirri tíðni það gildi sem skynjarinn heldur enn og kemur þannig í stað mælinganna sem vantar. Þetta getur ekki hulið dauða innstungu: bakgrunnsvaktin heldur áfram að mæla raunverulega þögn, og skynjari sem hefur ekki látið vita í lengri tíma en Engin-uppfærsla-tímamark telst vera úr sambandi og fær engan púls. Haltu gildinu jöfnu eða hærra en Sýnitakabil. 0 gerir það óvirkt.",
+      "label": "Púlsbil"
+    },
     "watchdog_interval": {
       "doc": "Hversu oft bakgrunnsvaktin athugar hvort skynjarar hafi verið stöðvaðir og liðinn tími. Sjálfgefið 30 s.",
       "label": "Gæsluabil"

@@ -1348,6 +1348,10 @@
       "doc": "İsteğe bağlı anahtar, duraklatma durumunda kapatılır ve devam ederken tekrar açılır; \"Duraklatma aynı zamanda gücü de keser\" ile birlikte kullanılır.",
       "label": "Anahtar Varlığı"
     },
+    "heartbeat_interval": {
+      "doc": "Varsayılan olarak kapalıdır. Bazı fişler, ölçüm sabitlendikten sonra veri yayınlamayı tamamen keser; Home Assistant hiçbir şey almaz ve döngü sonu zamanlayıcıları takılıp kalır. Bir aralık belirlediğinizde WashData, sensörün hâlâ tuttuğu değeri bu sıklıkta yeniden besleyerek eksik okumaların yerini doldurur. Bu, ölü bir fişi gizleyemez: çevrimdışı bekçisi gerçek sessizliği ölçmeye devam eder ve Güncelleme Yok Zaman Aşımı süresinden daha uzun süredir değer bildirmeyen bir sensör çevrimdışı sayılır, hiç kalp atışı almaz. Değeri Örnekleme Aralığına eşit veya ondan büyük tutun. 0 bunu devre dışı bırakır.",
+      "label": "Kalp Atışı Aralığı"
+    },
     "watchdog_interval": {
       "doc": "Arka plan gözlemcisinin durmuş sensörleri ve geçen zaman aşımlarını ne sıklıkla kontrol ettiği. Varsayılan 30 sn.",
       "label": "Bekçi Aralığı"

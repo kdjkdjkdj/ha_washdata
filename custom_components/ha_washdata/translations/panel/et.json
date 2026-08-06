@@ -1348,6 +1348,10 @@
       "doc": "Valikuline lüliti lülitatakse pausi korral välja ja jätkamisel uuesti sisse, kasutatakse koos funktsiooniga \"Paus katkestab ka toite\".",
       "label": "Lüliti Olem"
     },
+    "heartbeat_interval": {
+      "doc": "Vaikimisi välja lülitatud. Mõned pistikud lõpetavad näitude saatmise sootuks, kui väärtus on paigas, nii et Home Assistanti ei jõua enam midagi ja tsükli lõpu taimerid jäävad seisma. Kui määrate intervalli, saadab WashData nii tihti uuesti väärtuse, mis anduril endiselt on, ja asendab sellega puuduvad näidud. Surnud pistikut see varjata ei suuda: võrguühenduseta valvekoer mõõdab endiselt tegelikku vaikust ning andur, mis pole teatanud kauem, kui lubab Ilma Uuenduseta Aegumine, loetakse võrguühenduseta olevaks ega saa üldse elumärki. Hoidke väärtus vähemalt sama suur kui Proovivõtu Intervall. 0 lülitab funktsiooni välja.",
+      "label": "Elumärgi Intervall"
+    },
     "watchdog_interval": {
       "doc": "Kui sageli taustavalve kontrollib andureid seiskunud ja aegunud aegu. Vaikimisi 30 s.",
       "label": "Valvekoera Intervall"

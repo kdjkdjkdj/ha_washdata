@@ -1348,6 +1348,10 @@
       "doc": "Interrupteur optionnel désactivé en pause et réactivé lors de la reprise, utilisé avec \"La pause coupe également l'alimentation\".",
       "label": "Entité interrupteur"
     },
+    "heartbeat_interval": {
+      "doc": "Désactivé par défaut. Certaines prises cessent complètement d'émettre une fois la mesure stabilisée : Home Assistant ne reçoit alors plus rien et les minuteries de fin de cycle restent bloquées. Indiquez un intervalle et WashData réinjecte à cette fréquence la valeur que le capteur affiche toujours, en remplacement des relevés manquants. Cela ne peut pas masquer une prise morte : le chien de garde hors ligne continue de mesurer le vrai silence, et un capteur qui n'a plus rien signalé au-delà du Délai d'expiration sans mise à jour est considéré comme hors ligne et ne reçoit aucune pulsation. Gardez cette valeur supérieure ou égale à l'Intervalle d'échantillonnage. 0 la désactive.",
+      "label": "Intervalle de pulsation"
+    },
     "watchdog_interval": {
       "doc": "À quelle fréquence le chien de garde en arrière-plan vérifie les capteurs bloqués et les délais d'attente écoulés. Par défaut 30 s.",
       "label": "Intervalle du chien de garde"

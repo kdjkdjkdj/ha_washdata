@@ -1320,6 +1320,10 @@
       "doc": "Comutator opțional dezactivat în pauză și reactivat la reluare, utilizat împreună cu „Pauză întrerupe și alimentarea”.",
       "label": "Entitate Switch"
     },
+    "heartbeat_interval": {
+      "doc": "Dezactivat implicit. Unele prize nu mai trimit deloc valori după ce citirea se stabilizează, așa că Home Assistant nu mai primește nimic, iar cronometrele de final de ciclu rămân blocate. Setați un interval, iar WashData retrimite cu acea frecvență valoarea pe care senzorul o păstrează în continuare, în locul citirilor lipsă. Nu poate ascunde o priză moartă: monitorul de deconectare măsoară în continuare tăcerea reală, iar un senzor care nu a mai raportat mai mult decât Timeout Fără Actualizare este considerat offline și nu primește niciun heartbeat. Păstrați valoarea cel puțin egală cu setarea Interval de Eșantionare. 0 îl dezactivează.",
+      "label": "Interval Heartbeat"
+    },
     "watchdog_interval": {
       "doc": "Cât de des verifică monitorul de fundal pentru senzori blocați și timeout-uri scurse. Implicit 30 s.",
       "label": "Interval Watchdog"
