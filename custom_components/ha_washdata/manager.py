@@ -2977,8 +2977,23 @@ class WashDataManager:
         ):
             return
 
-        # Track observed power readings for learning
-        self.learning_manager.process_power_reading(power, now, self._last_reading_time)
+        # Track observed power readings for learning - but only while a cycle is
+        # in progress. The cadence statistics behind the operational suggestions
+        # describe how densely the plug reports *during a run*. A plug that keeps
+        # publishing between cycles - state reports on an unchanged value, or a
+        # standby figure that jitters - would otherwise fill the 200-sample
+        # window with idle traffic within a few hours, and the suggestions would
+        # then be derived from standby rather than from operation. The detector
+        # below still sees every reading; it is what spots the next cycle start.
+        if self.detector.state in (
+            STATE_RUNNING,
+            STATE_PAUSED,
+            STATE_ENDING,
+            STATE_STARTING,
+        ):
+            self.learning_manager.process_power_reading(
+                power, now, self._last_reading_time
+            )
         self._last_reading_time = now
         self._last_real_reading_time = now # Track real update
         self._current_power = power
