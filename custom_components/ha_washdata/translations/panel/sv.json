@@ -1348,6 +1348,10 @@
       "doc": "Valfri strömbrytare slås av vid paus och på igen vid återupptagning, används tillsammans med \"Pausen bryter också strömmen\".",
       "label": "Switchentitet"
     },
+    "heartbeat_interval": {
+      "doc": "Avstängd som standard. Vissa uttag slutar skicka helt när mätvärdet har stabiliserats, så att Home Assistant inte får något alls och timrarna vid cykelslut blir stående. Anger du ett intervall matar WashData i den takten in värdet som sensorn fortfarande håller på nytt, och ersätter så de uteblivna avläsningarna. Det kan inte dölja ett dött uttag: offline-vakthunden fortsätter att mäta den verkliga tystnaden, och en sensor som inte har rapporterat under längre tid än Tidsgräns utan uppdatering betraktas som offline och får ingen heartbeat alls. Håll värdet på eller över Samplingsintervallet. 0 inaktiverar den.",
+      "label": "Heartbeat-intervall"
+    },
     "watchdog_interval": {
       "doc": "Hur ofta kontrollerar bakgrundsvakten efter avstängda sensorer och förflutna timeouts. Standard 30 s.",
       "label": "Vakthundsintervall"

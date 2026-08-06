@@ -1348,6 +1348,10 @@
       "doc": "Optionele schakelaar die wordt uitgeschakeld bij pauze en weer ingeschakeld bij hervatten, gebruikt in combinatie met \"Pauze schakelt ook de stroom uit\".",
       "label": "Schakelentiteit"
     },
+    "heartbeat_interval": {
+      "doc": "Standaard uit. Sommige stekkers stoppen helemaal met verzenden zodra de meetwaarde stabiel is, waardoor Home Assistant helemaal niets meer binnenkrijgt en de timers aan het einde van de cyclus blijven hangen. Stelt u een interval in, dan voert WashData met die regelmaat de waarde die de sensor nog vasthoudt opnieuw in, als vervanging voor de ontbrekende metingen. Een dode stekker valt hiermee niet te verbergen: de offline-waakhond blijft de echte stilte meten, en een sensor die langer dan de Time-out zonder update niets heeft gemeld, geldt als offline en krijgt helemaal geen heartbeat. Houd deze waarde gelijk aan of hoger dan het Samplinginterval. 0 schakelt het uit.",
+      "label": "Heartbeat-interval"
+    },
     "watchdog_interval": {
       "doc": "Hoe vaak de achtergrondwaakhond controleert op vastgelopen sensoren en verstreken time-outs. Standaard 30 sec.",
       "label": "Waakhondinterval"

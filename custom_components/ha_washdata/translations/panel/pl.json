@@ -1320,6 +1320,10 @@
       "doc": "Opcjonalny przełącznik wyłączany podczas pauzy i włączany ponownie po wznowieniu, używany razem z opcją „Pauza powoduje również odcięcie zasilania”.",
       "label": "Encja Przełącznika"
     },
+    "heartbeat_interval": {
+      "doc": "Domyślnie wyłączone. Niektóre wtyczki po ustabilizowaniu się odczytu przestają całkowicie wysyłać dane, więc Home Assistant nie dostaje już nic, a liczniki kończące cykl stoją w miejscu. Po ustawieniu interwału WashData z taką częstotliwością ponownie podaje wartość, którą czujnik nadal utrzymuje, zastępując brakujące odczyty. Nie ukryje to martwej wtyczki: nadzór stanu offline wciąż mierzy rzeczywistą ciszę, a czujnik, który nie zgłosił się dłużej niż Limit Czasu Braku Aktualizacji, jest traktowany jako offline i nie dostaje żadnego sygnału. Ustaw wartość nie mniejszą niż Interwał Próbkowania. 0 wyłącza tę funkcję.",
+      "label": "Interwał Heartbeat"
+    },
     "watchdog_interval": {
       "doc": "Jak często funkcja nadzorująca działająca w tle sprawdza, czy czujniki nie uległy zablokowaniu i nie upłynęły limity czasu. Domyślnie 30 s.",
       "label": "Interwał Watchdog"

@@ -1348,6 +1348,10 @@
       "doc": "El interruptor opcional se apaga en pausa y se vuelve a encender al reanudar, se usa junto con \"Pausa también corta la energía\".",
       "label": "Entidad interruptora"
     },
+    "heartbeat_interval": {
+      "doc": "Desactivado de forma predeterminada. Algunos enchufes dejan de publicar por completo en cuanto la lectura se estabiliza, de modo que Home Assistant no recibe nada en absoluto y los temporizadores de fin de ciclo se quedan parados. Indique un intervalo y WashData volverá a inyectar con esa frecuencia el valor que el sensor sigue manteniendo, en lugar de las lecturas que faltan. Esto no puede ocultar un enchufe muerto: la vigilancia de desconexión sigue midiendo el silencio real y un sensor que lleva sin informar más tiempo que el Tiempo de espera sin actualización se considera desconectado y no recibe ningún latido. Manténgalo igual o por encima del Intervalo de muestreo. 0 lo desactiva.",
+      "label": "Intervalo de latido"
+    },
     "watchdog_interval": {
       "doc": "Con qué frecuencia el organismo de control en segundo plano comprueba si hay sensores bloqueados y tiempos de espera transcurridos. Por defecto 30 s.",
       "label": "Intervalo de vigilancia"

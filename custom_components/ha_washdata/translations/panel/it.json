@@ -1348,6 +1348,10 @@
       "doc": "L'interruttore opzionale può essere disattivato durante la pausa e riattivato alla ripresa, utilizzato insieme a \"La pausa interrompe anche l'alimentazione\".",
       "label": "Entità interruttore"
     },
+    "heartbeat_interval": {
+      "doc": "Disattivato per impostazione predefinita. Alcune spine smettono del tutto di trasmettere una volta che la lettura si stabilizza, così Home Assistant non riceve più nulla e i timer di fine ciclo restano fermi. Imposta un intervallo e WashData reimmette con quella frequenza il valore che il sensore mantiene ancora, al posto delle letture mancanti. Non può nascondere una spina morta: il watchdog offline continua a misurare il silenzio reale e un sensore che non segnala da più tempo del Timeout senza aggiornamenti viene considerato offline e non riceve alcun heartbeat. Tienilo pari o superiore all'Intervallo di campionamento. 0 lo disattiva.",
+      "label": "Intervallo heartbeat"
+    },
     "watchdog_interval": {
       "doc": "La frequenza con cui il watchdog in background controlla i sensori bloccati e i timeout trascorsi. Predefinito 30 secondi.",
       "label": "Intervallo supervisore"

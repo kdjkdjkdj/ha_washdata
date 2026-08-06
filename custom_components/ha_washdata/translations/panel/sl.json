@@ -1320,6 +1320,10 @@
       "doc": "Izbirno stikalo, ki se izklopi ob premoru in se ponovno vklopi ob nadaljevanju, uporablja se skupaj s \"Premor tudi prekine napajanje\".",
       "label": "Entiteta stikala"
     },
+    "heartbeat_interval": {
+      "doc": "Privzeto izklopljeno. Nekateri vtiči po umiritvi vrednosti nehajo pošiljati podatke, zato Home Assistant ne dobi ničesar več in časovniki za konec cikla obstanejo. Če nastavite interval, WashData tako pogosto znova pošlje vrednost, ki jo senzor še vedno drži, in s tem nadomesti manjkajoče odčitke. Mrtvega vtiča to ne skrije: nadzornik za stanje brez povezave še naprej meri resnično tišino, senzor, ki se ni javil dlje, kot je Časovna omejitev brez posodobitve, pa velja za nedosegljivega in utripa sploh ne dobi. Nastavite vrednost, ki je enaka ali večja kot Interval vzorčenja. 0 ga onemogoči.",
+      "label": "Interval utripa"
+    },
     "watchdog_interval": {
       "doc": "Kako pogosto nadzorni sistem v ozadju preveri zastoje senzorjev in pretečene časovne omejitve. Privzeto 30 s.",
       "label": "Interval nadzornika"

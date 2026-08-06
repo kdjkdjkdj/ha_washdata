@@ -1344,6 +1344,10 @@
       "doc": "Optionaler Schalter, der bei Pause aus- und beim Fortsetzen wieder einschaltet und zusammen mit „Pause unterbricht auch die Stromversorgung“ verwendet wird.",
       "label": "Schalter-Entität"
     },
+    "heartbeat_interval": {
+      "doc": "Standardmäßig aus. Manche Stecker senden gar nichts mehr, sobald sich der Messwert eingependelt hat, sodass in Home Assistant überhaupt nichts mehr ankommt und die Timer am Zyklusende stehen bleiben. Legen Sie ein Intervall fest, dann speist WashData in diesem Takt den Wert erneut ein, den der Sensor noch hält, und ersetzt so die fehlenden Messwerte. Einen toten Stecker kann das nicht verbergen: Der Offline-Watchdog misst weiterhin die tatsächliche Stille, und ein Sensor, der länger als das „Timeout ohne Aktualisierung“ nichts gemeldet hat, gilt als offline und bekommt gar keinen Heartbeat. Halten Sie den Wert auf oder über dem Abtastintervall. 0 deaktiviert die Funktion.",
+      "label": "Heartbeat-Intervall"
+    },
     "watchdog_interval": {
       "doc": "Wie oft prüft der Hintergrund-Watchdog auf blockierte Sensoren und abgelaufene Zeitüberschreitungen? Standard 30 s.",
       "label": "Watchdog-Intervall"

@@ -1320,6 +1320,10 @@
       "doc": "Çelësi opsional i çaktivizuar në pauzë dhe përsëri ndizet kur rifillon, përdoret së bashku me \"Pauza gjithashtu ndërpret energjinë\".",
       "label": "Entiteta e çelësit"
     },
+    "heartbeat_interval": {
+      "doc": "I çaktivizuar si parazgjedhje. Disa priza ndalojnë krejtësisht dërgimin e vlerave sapo leximi stabilizohet, kështu që Home Assistant nuk merr asgjë dhe kohëmatësit e mbylljes së ciklit ngecin. Vendosni një interval dhe WashData e riushqen me këtë ritëm vlerën që sensori mban ende, duke zëvendësuar leximet që mungojnë. Kjo nuk mund të fshehë një prizë të vdekur: mbikëqyrësi i shkëputjes vazhdon të masë heshtjen e vërtetë dhe një sensor që nuk ka raportuar më gjatë se Koha e skadimit pa përditësim trajtohet si jashtë linje dhe nuk merr asnjë puls. Mbajeni të barabartë ose më të madh se Intervali i kampionimit. Vlera 0 e çaktivizon.",
+      "label": "Intervali i pulsit"
+    },
     "watchdog_interval": {
       "doc": "Sa shpesh mbikëqyrësi i sfondit kontrollon për sensorë të bllokuar dhe afate kohore të kaluara. Parazgjedhja 30 s.",
       "label": "Intervali i rojëtarit"

@@ -1320,6 +1320,10 @@
       "doc": "Az opcionális kapcsoló szüneteltetéskor kikapcsolható, majd újraindításkor visszakapcsolható, a „Szünet is leállítja az áramot” funkcióval együtt használható.",
       "label": "Kapcsoló entitás"
     },
+    "heartbeat_interval": {
+      "doc": "Alapértelmezés szerint kikapcsolva. Egyes csatlakozók teljesen abbahagyják a küldést, amint a leolvasott érték beáll, így a Home Assistanthoz semmi sem érkezik, és a ciklus végi időzítők megállnak. Ha megad egy intervallumot, a WashData ilyen gyakran újra beadja azt az értéket, amelyet az érzékelő még mindig mutat, és ezzel pótolja az elmaradt leolvasásokat. Egy halott csatlakozót ez nem tud elrejteni: az offline felügyelet továbbra is a valódi csendet méri, és az az érzékelő, amely a Frissítés nélküli időtúllépésnél hosszabb ideje nem jelentkezett, offline állapotúnak számít, és egyáltalán nem kap életjelet. Tartsa legalább a Mintavételezési intervallum értékén. A 0 kikapcsolja.",
+      "label": "Életjel intervallum"
+    },
     "watchdog_interval": {
       "doc": "Milyen gyakran ellenőrzi a háttérfigyelő az elakadt érzékelőket és az eltelt időtúllépéseket. Alapértelmezett 30 s.",
       "label": "Felügyelő intervallum"

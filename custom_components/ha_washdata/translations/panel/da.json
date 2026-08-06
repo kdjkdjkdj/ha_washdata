@@ -1348,6 +1348,10 @@
       "doc": "Valgfri kontakt slås fra ved pause og tændes igen ved genoptagelse, bruges sammen med \"Pause afbryder også strømmen\".",
       "label": "Kontaktenhed"
     },
+    "heartbeat_interval": {
+      "doc": "Slået fra som standard. Nogle stikkontakter holder helt op med at sende, når måleværdien har stabiliseret sig, så Home Assistant slet ikke modtager noget, og timerne ved cyklusafslutning går i stå. Angiver du et interval, sender WashData i den takt den værdi ind igen, som sensoren stadig holder, og træder dermed i stedet for de manglende aflæsninger. Det kan ikke skjule en død stikkontakt: offline-vagthunden måler fortsat den reelle stilhed, og en sensor, der ikke har meldt noget i længere tid end Timeout uden opdatering, betragtes som offline og får slet ingen heartbeat. Hold værdien på eller over Samplingsintervallet. 0 deaktiverer det.",
+      "label": "Heartbeat-interval"
+    },
     "watchdog_interval": {
       "doc": "Hvor ofte vagthunden i baggrunden tjekker for fastholdte sensorer og forløbne timeouts. Standard 30 s.",
       "label": "Watchdog-interval"

@@ -1320,6 +1320,10 @@
       "doc": "Volitelný spínač vypnutý při pozastavení a znovu zapnutý při obnovení, používaný společně s \"Pauza také přeruší napájení\".",
       "label": "Entita spínače"
     },
+    "heartbeat_interval": {
+      "doc": "Ve výchozím nastavení vypnuto. Některé zástrčky přestanou po ustálení hodnoty posílat data úplně, takže Home Assistant nedostane vůbec nic a časovače konce cyklu se zaseknou. Když nastavíte interval, WashData v této frekvenci znovu podává hodnotu, kterou senzor stále drží, a nahrazuje tak chybějící čtení. Mrtvou zástrčku to neskryje: hlídač stavu offline dál měří skutečné ticho a senzor, který se neozval déle, než je Timeout bez aktualizace, se považuje za offline a žádný pulz nedostane. Nastavte hodnotu stejnou nebo vyšší než Interval vzorkování. 0 to vypne.",
+      "label": "Interval pulzu"
+    },
     "watchdog_interval": {
       "doc": "Jak často hlídáč na pozadí kontroluje zastavené senzory a uplynulé časové limity. Výchozí 30 s.",
       "label": "Interval hlídače"

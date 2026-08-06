@@ -1320,6 +1320,10 @@
       "doc": "Papildu slēdzis tiek izslēgts pauzes laikā un atkal ieslēgts, kad tiek atsākts, un tiek izmantots kopā ar funkciju “Pauze arī pārtrauc strāvu”.",
       "label": "Slēdža entītija"
     },
+    "heartbeat_interval": {
+      "doc": "Pēc noklusējuma izslēgts. Dažas kontaktdakšas pēc rādījuma nostabilizēšanās vispār pārtrauc sūtīt atjauninājumus, tāpēc Home Assistant vairs nesaņem neko un cikla beigu taimeri iestrēgst. Ja norādāt intervālu, WashData tik bieži atkārtoti padod vērtību, kas sensoram joprojām ir, un ar to aizstāj trūkstošos rādījumus. Bojātu kontaktdakšu tas noslēpt nespēj: bezsaistes sargsuns joprojām mēra patieso klusumu, un sensors, kas nav ziņojis ilgāk, nekā pieļauj “Laiks bez atjauninājuma”, tiek uzskatīts par bezsaistē esošu un dzīvības signālu nesaņem vispār. Saglabājiet to vismaz tikpat lielu kā “Paraugu ņemšanas intervāls”. 0 to atspējo.",
+      "label": "Dzīvības signāla intervāls"
+    },
     "watchdog_interval": {
       "doc": "Cik bieži fona sargsuns pārbauda, ​​vai sensori nav apstājušies un vai nav pagājis noildzes laiks. Noklusējums 30 s.",
       "label": "Sargsuna intervāls"

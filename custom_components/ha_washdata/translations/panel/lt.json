@@ -1320,6 +1320,10 @@
       "doc": "Pasirenkamas jungiklis išjungiamas pristabdant ir vėl įjungiamas, kai tęsiamas, naudojamas kartu su „Pauzė taip pat atjungia maitinimą“.",
       "label": "Jungiklio objektas"
     },
+    "heartbeat_interval": {
+      "doc": "Pagal numatytuosius nustatymus išjungta. Kai kurie kištukai, rodmenims nusistovėjus, visiškai nustoja siųsti atnaujinimus, todėl į Home Assistant nebeateina nieko, o ciklo pabaigos laikmačiai užstringa. Nustačius intervalą, WashData tokiu dažnumu pakartotinai pateikia reikšmę, kurią jutiklis vis dar rodo, ir taip užpildo trūkstamus rodmenis. Mirusio kištuko tai nepaslėps: neprisijungimo stebėjimas ir toliau matuoja tikrąją tylą, o jutiklis, kuris nepranešė ilgiau nei „Be atnaujinimų skirtasis laikas“, laikomas atsijungusiu ir jokio gyvybės signalo negauna. Palikite ją ne mažesnę nei Mėginių ėmimo intervalas. 0 išjungia šią funkciją.",
+      "label": "Gyvybės signalo intervalas"
+    },
     "watchdog_interval": {
       "doc": "Kaip dažnai foninis sergėtojas tikrina, ar neužstrigo jutikliai ir ar nėra laiko. Numatytasis 30 s.",
       "label": "Stebėjimo intervalas"

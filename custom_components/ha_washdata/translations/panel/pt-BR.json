@@ -1320,6 +1320,10 @@
       "doc": "Interruptor opcional desligado na pausa e ligado novamente ao reiniciar, usado junto com \"Pausa também corta energia\".",
       "label": "Entidade do Switch"
     },
+    "heartbeat_interval": {
+      "doc": "Desativado por padrão. Algumas tomadas param de publicar completamente quando a leitura se estabiliza, então o Home Assistant não recebe mais nada e os temporizadores de fim de ciclo travam. Defina um intervalo e o WashData reenvia nessa frequência o valor que o sensor ainda mantém, no lugar das leituras que faltam. Isso não esconde uma tomada morta: o watchdog que detecta a queda de conexão continua medindo o silêncio real, e um sensor que não reporta há mais tempo que o Timeout Sem Atualização é considerado offline e não recebe nenhum heartbeat. Mantenha o valor igual ou acima do Intervalo de Amostragem. 0 desativa o recurso.",
+      "label": "Intervalo de Heartbeat"
+    },
     "watchdog_interval": {
       "doc": "Com que frequência o watchdog em segundo plano verifica sensores paralisados ​​e tempos limite decorridos. Padrão 30 seg.",
       "label": "Intervalo do Watchdog"
