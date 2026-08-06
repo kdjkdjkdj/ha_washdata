@@ -5,6 +5,14 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.3.11 - 2026-08-06 (fork build)
+
+Fork build on top of upstream 0.5.3. Fixes a regression introduced by 0.5.3.10, found by hand in the panel minutes after that build was rolled out.
+
+### Fixed
+
+- **The trim spinner and arrow keys work again, and now move by one sample** (panel): 0.5.3.10 snapped the trim boundary onto a real sample, which was right, but left the number input at `step="0.1"`. Every spinner click and arrow key therefore moved the value a tenth of a second - which, on a 10 s reading cadence, always lands inside the snap radius of the sample already selected. The commit handler snapped it straight back, so the control did nothing at all. The mistake was conceptual rather than arithmetic: a trim boundary has no granularity finer than one sample, because the window is an inclusive filter over stored samples and every offset between two of them behaves exactly like the lower one. Arrow keys and spinner clicks now step from sample to sample - the keyboard through an explicit `keydown` with `preventDefault` so the browser does not apply its own step on top, the mouse spinner through the input handler recognising a change of exactly one step as a nudge rather than a typed value. Both snap first, so a boundary left mid-gap by a drag behaves predictably, then move one index, and refuse to cross the other boundary or run off either end of the curve. Free typing is unchanged and is still snapped when the edit is committed. Six further panel render-smoke checks cover it, one of which asserts that a step never leaves the boundary where it was, so the bounce cannot return unnoticed.
+
 ## 0.5.3.10 - 2026-08-06 (fork build)
 
 Fork build on top of upstream 0.5.3. Fixes a chain that could destroy data through the cycle inspector: the curve the user reads a trim boundary off is not the curve the trim is applied to.
