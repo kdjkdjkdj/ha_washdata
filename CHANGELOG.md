@@ -5,6 +5,22 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.3.10 - 2026-08-06 (fork build)
+
+Fork build on top of upstream 0.5.3. Fixes a chain that could destroy data through the cycle inspector: the curve the user reads a trim boundary off is not the curve the trim is applied to.
+
+### Fixed
+
+- **The trim boundary now lands on a real sample** (panel): the trim inputs rounded to whole seconds and neither the inputs nor the drag handles snapped to anything. Sample offsets are routinely fractional (a 10 s cadence drifts to x.3), so aiming at a visible point and getting a boundary a few tenths short of it was the normal case, not an edge case. Measured on a real dishwasher cycle (2026-08-06): the self-shutdown sits at 3132.3 s, the input displayed "3132", and `trim_cycle` filters `offset <= end_s` - so applying the displayed value cut the very sample the trim existed to preserve, leaving 11.7 W as the last point of a finished cycle. `trim_cycle` is irreversible. Boundaries are now formatted and entered to a tenth of a second and snapped onto an actual sample when a drag ends, when an edit is committed, and once more immediately before the call. A numeric readout under the fields shows how many samples the window keeps and the exact offset and wattage of the last one that survives, so the destructive step is confirmable rather than inferred.
+
+- **Curve decimation no longer drops local extremes** (`ws_api.py`): `_downsample` kept every n-th sample. Whether a given reading survived was an artefact of the stride, and the readings that matter most for reading a cycle are single-sample events - a dishwasher's shutdown is one 0 W reading between two ~12 W readings. Measured on a 376-sample curve (2026-08-06): two of its four 0 W samples were dropped, and which two was arithmetic. A curve that has lost its zero makes a finished cycle look like one that never stopped; it produced a phantom "160 s measurement gap" and a 120 s wrong trim target on an earlier occasion. Decimation now keeps both the minimum and the maximum reading of each bucket, in time order, plus the first and last sample, within the same point budget - a zero is always its bucket's minimum, so it cannot be lost. Unparseable rows are dropped rather than coerced, because a fabricated 0 W sample is precisely what the trim view aims at.
+
+### Changed
+
+- **The cycle inspector receives the full curve** (`ws_api.py`): the 240-point budget dates from server-side rendering and is far below what the trim and split views need, since both feed a user-picked offset into an operation on the full-resolution data. Those two endpoints now use a 2000-point budget. Measured on a live install: 151 stored cycles across three appliances, the largest 1009 samples, ~14 KB as JSON - Home Assistant's 32 KB limit applies to fired events, not to WebSocket replies. In practice no real cycle is decimated for the inspector at all. The small budget stays for the overview charts, where many curves are drawn side by side.
+
+- **`get_cycle_power_data` and `analyze_split` report `sample_count` and `decimated`** (`ws_api.py`): the replies carried no way to tell a decimated curve from a complete one, so a gap introduced by thinning was indistinguishable from a real measurement gap. That is what turned a display limitation into a wrong diagnosis. The trim readout surfaces the flag.
+
 ## 0.5.3.9 - 2026-08-06 (fork build)
 
 Fork build on top of upstream 0.5.3. Completes the work started in 0.5.3.7: that build made the integration hear a sensor that keeps publishing an unchanged value; this one covers the sensor that stops publishing altogether.
