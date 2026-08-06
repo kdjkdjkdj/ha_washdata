@@ -5,6 +5,21 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.3.9 - 2026-08-06 (fork build)
+
+Fork build on top of upstream 0.5.3. Completes the work started in 0.5.3.7: that build made the integration hear a sensor that keeps publishing an unchanged value; this one covers the sensor that stops publishing altogether.
+
+### Added
+
+- **`heartbeat_interval` - optional stand-in readings for a sensor that goes completely quiet** (`manager.py`, `const.py`, `__init__.py`, panel Settings -> Timing & Watchdog): 0.5.3.7 added the state-*report* subscription, which fixes the common case of a plug that keeps telemetering an unchanged value. It does nothing for a plug that stops sending anything at all - neither a change nor a report arrives, so there is genuinely nothing to subscribe to, and every timer that only advances from inside `process_reading` freezes. Measured on a dryer (2026-08-05): after the last tumble pulse the power sensor produced **no event for ten minutes**; the anti-wrinkle idle accumulator advanced solely on the state-expiry timer's synthetic 0 W keepalives at 60 s intervals and the state closed at exactly 600 s of accumulated silence. The keepalive machinery is a floor, not a cadence: it injects zeros, only in certain states, at the housekeeping timer's rate, and the reading cadence it produces becomes the `p95` that every dynamic end threshold is derived from. Setting this option (seconds, **0 = off**, off by default) makes the manager re-feed the value the sensor still holds at that cadence, which both keeps the accumulators moving and pins `p95` to a value the user chose rather than to whatever the plug happened to do.
+
+  The obvious workaround - a template sensor that mirrors the raw value and forces a state change on a timer - was built and run first, and its failure mode is why the option is implemented here instead. A template heartbeat forwards a *stale* value with a *fresh* timestamp, which silences the only outage detection the integration has: `Watchdog: Low power silence` never fires because a reading always just arrived. Measured (2026-08-04): an MQTT outage left one dishwasher frozen at a constant `0.0 W` for **34.7 hours** and a washing machine for **11.9 hours** while all heartbeats ticked cleanly. The in-code version cannot do this, by construction:
+
+  - `_last_real_reading_time` is deliberately **not** advanced by a heartbeat, so `no_update_active_timeout` keeps measuring real silence and the existing force-stop / keepalive paths still see the outage.
+  - A source whose own `last_reported` is older than that timeout is treated as offline and gets **no** heartbeat at all, so a stale value is never re-stamped with a fresh time and written into the stored curve.
+
+  Synthetic readings also stay out of `diag_buffer` and the learning cadence statistics, both of which describe what the plug did rather than what the integration inferred. Recording mode is skipped entirely. The timer runs for the whole lifetime of the entry rather than only during a cycle: a quiet sensor delays cycle *detection* too, and there is no cycle to hang the timer off at that point. Existing installations are unaffected - the default is 0 and no timer is scheduled.
+
 ## 0.5.3.8 - 2026-08-05 (fork build)
 
 Fork build on top of upstream 0.5.3. Diagnostics only - no behaviour change. Closes the last blind spot in the Smart Termination gate chain, found while establishing why a healthy dishwasher cycle finished via the fallback path.
