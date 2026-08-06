@@ -224,6 +224,53 @@ check('trim: offsets are formatted to a tenth of a second', () => {
   if (el._fmtTrimOffset(3132) !== '3132.0') throw new Error(el._fmtTrimOffset(3132));
 });
 
+// The spinner arrows and the up/down keys move the boundary by one SAMPLE.
+// Regression guard: they used to move by 0.1 s, which always landed inside the
+// snap radius of the sample already selected, so the value bounced straight back
+// and the control looked dead (reported from the live panel, 2026-08-06).
+check('trim: stepping up moves to the next sample', () => {
+  el._modal = _trimCurve();
+  el._modal.trim.end = 3132.0;
+  el._stepTrimBySample('end', 1);
+  if (el._modal.trim.end !== 3132.3) throw new Error('expected 3132.3, got ' + el._modal.trim.end);
+});
+
+check('trim: stepping down moves to the previous sample', () => {
+  el._modal = _trimCurve();
+  el._modal.trim.end = 3132.0;
+  el._stepTrimBySample('end', -1);
+  if (el._modal.trim.end !== 3122.3) throw new Error('expected 3122.3, got ' + el._modal.trim.end);
+});
+
+check('trim: a step never leaves the boundary where it was', () => {
+  el._modal = _trimCurve();
+  const before = el._modal.trim.end = 3132.0;
+  el._stepTrimBySample('end', 1);
+  if (el._modal.trim.end === before) throw new Error('stepper did nothing - the 0.1s bounce is back');
+});
+
+check('trim: stepping from an off-sample value snaps first', () => {
+  el._modal = _trimCurve();
+  el._modal.trim.end = 3131.6;            // where a pointer drag lands
+  el._stepTrimBySample('end', -1);
+  if (el._modal.trim.end !== 3122.3) throw new Error('expected 3122.3, got ' + el._modal.trim.end);
+});
+
+check('trim: a step cannot run past the end of the curve', () => {
+  el._modal = _trimCurve();
+  el._modal.trim.end = 3352.3;            // last sample
+  el._stepTrimBySample('end', 1);
+  if (el._modal.trim.end !== 3352.3) throw new Error('ran past the last sample: ' + el._modal.trim.end);
+});
+
+check('trim: a step cannot push start past end', () => {
+  el._modal = _trimCurve();
+  el._modal.trim.start = 3122.3;
+  el._modal.trim.end = 3132.0;
+  el._stepTrimBySample('start', 1);       // 3132.0 would collide with end
+  if (el._modal.trim.start !== 3122.3) throw new Error('start crossed end: ' + el._modal.trim.start);
+});
+
 check('modal: cycle-detail trim', () => { el._modal = _trimCurve(); return el._htmlModal(); });
 
 check('modal: profile-panel stats', () => { el._modal = { type: 'profile-panel', name: 'Cotton 60', tab: 'stats', loaded: true, stats: el._profiles[0], env: {} }; return el._htmlModal(); });
