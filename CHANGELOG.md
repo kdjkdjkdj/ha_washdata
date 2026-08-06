@@ -5,6 +5,14 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.3.12 - 2026-08-06 (fork build)
+
+Fork build on top of upstream 0.5.3. Keeps the cadence statistics behind the operational suggestions describing operation rather than standby.
+
+### Fixed
+
+- **Idle readings no longer enter the learning cadence statistics** (`manager.py`): `LearningManager.process_power_reading` keeps a rolling window of the last 200 reading gaps and derives `watchdog_interval`, `no_update_active_timeout`, `off_delay` and `profile_match_interval` from its p95/median every 300 s. It was fed by every reading that passed the sampling throttle, including the ones that arrive between cycles - a plug whose standby figure jitters produces state changes while the appliance is off, and since 0.5.3.7 a plug that re-reports an unchanged value does too. At one reading per minute the 200-sample window is filled entirely with standby traffic after 200 minutes, and the suggestions are then computed from standby rather than from a run. Measured on a live install (2026-08-06): an idle washing machine suggested `off_delay` 3640 s against a configured 180 s, its dishwasher 1800 s against 600 s - values that would add up to an hour of latency to end detection if applied. The call is now gated on the detector being in `starting`/`running`/`paused`/`ending`. The detector itself still receives every reading; it is what spots the next cycle start, and gating that would be a far worse defect than the one being fixed. A side effect is that an idle appliance stops rewriting its store file every five minutes.
+
 ## 0.5.3.11 - 2026-08-06 (fork build)
 
 Fork build on top of upstream 0.5.3. Fixes a regression introduced by 0.5.3.10, found by hand in the panel minutes after that build was rolled out.
