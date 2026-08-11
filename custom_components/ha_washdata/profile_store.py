@@ -6579,7 +6579,14 @@ class ProfileStore:
             ),
             key=lambda x: x[0],
         )
-        if not kept:
+        # A window that keeps a single sample does not shorten a cycle, it destroys
+        # it: duration and energy collapse to 0, the signature is dropped,
+        # start_time is moved onto that one sample and power_data is replaced by
+        # it. Nothing here is reversible, and afterwards full_duration_s is 0.0, so
+        # the panel cannot express a valid window either and no later trim can
+        # repair the record. Refuse it; both callers already surface a failed trim
+        # (WS task error / ServiceValidationError).
+        if len(kept) < 2:
             return False
 
         # Re-normalize offsets so the trimmed segment starts at 0.0

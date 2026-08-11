@@ -249,6 +249,65 @@ check('trim: a step never leaves the boundary where it was', () => {
   if (el._modal.trim.end === before) throw new Error('stepper did nothing - the 0.1s bounce is back');
 });
 
+// Clock-time input. The mode reads the entered time against the cycle's own date,
+// so a cycle running past midnight has to be shifted by a day - but the shift used
+// to fire for ANY time earlier than the start, and the clamp then pinned the START
+// handle to the last sample. What survived was a one-second window, the store kept
+// a single sample, and the cycle was gone with no way back (upstream #366).
+// Local-time constructor on purpose: the mode compares wall-clock against the
+// cycle's date, so the fixture must not carry a fixed UTC offset.
+const _clockCurve = (h, min, full) => {
+  const start = new Date(2026, 7, 9, h, min, 0, 0);
+  return {
+    type: 'cycle-detail', mode: 'trim', loaded: true, cycleId: 'c1', ml: null, timeMode: 'clock',
+    curve: {
+      samples: [[0, 11.4], [full, 11.4]], full_duration_s: full, sample_count: 2,
+      decimated: false, start_time: start.toISOString(),
+    },
+    trim: { start: 0, end: full },
+  };
+};
+const _clockOff = (mod, clock) => { el._modal = mod; return el._clockToOffset(clock); };
+
+check('trim/clock: the exact start maps to offset 0', () => {
+  const got = _clockOff(_clockCurve(21, 0, 9180), '21:00:00');
+  if (got !== 0) throw new Error('expected 0, got ' + got);
+});
+
+check('trim/clock: a start entered before the cycle keeps the whole cycle', () => {
+  const got = _clockOff(_clockCurve(21, 0, 9180), '20:44:00');
+  if (got !== 0) throw new Error('expected 0, got ' + got + ' - the day shift is back');
+});
+
+check('trim/clock: two seconds before the start is still the front of the cycle', () => {
+  const got = _clockOff(_clockCurve(21, 0, 9180), '20:59:58');
+  if (got !== 0) throw new Error('expected 0, got ' + got);
+});
+
+check('trim/clock: a cycle running past midnight still shifts by a day', () => {
+  const got = _clockOff(_clockCurve(23, 30, 7200), '00:30:00');
+  if (got !== 3600) throw new Error('expected 3600, got ' + got);
+});
+
+check('trim/clock: before the start of a past-midnight cycle is the front, not the tail', () => {
+  const got = _clockOff(_clockCurve(23, 30, 7200), '23:00:00');
+  if (got !== 0) throw new Error('expected 0, got ' + got);
+});
+
+check('trim/clock: a time past the end clamps to the end', () => {
+  const got = _clockOff(_clockCurve(21, 0, 9180), '23:50:00');
+  if (got !== 9180) throw new Error('expected 9180, got ' + got);
+});
+
+check('trim/clock: an early start no longer collapses the window', () => {
+  const mod = _clockCurve(21, 0, 9180);
+  el._modal = mod;
+  mod.trim.start = Math.max(0, Math.min(el._clockToOffset('20:44:00'), mod.trim.end - 1));
+  mod.trim.end = Math.min(mod.curve.full_duration_s, Math.max(el._clockToOffset('23:50:00'), mod.trim.start + 1));
+  const width = mod.trim.end - mod.trim.start;
+  if (width !== 9180) throw new Error('window is ' + width + 's, expected the full 9180s');
+});
+
 check('trim: stepping from an off-sample value snaps first', () => {
   el._modal = _trimCurve();
   el._modal.trim.end = 3131.6;            // where a pointer drag lands

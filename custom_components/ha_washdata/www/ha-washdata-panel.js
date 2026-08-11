@@ -9407,8 +9407,15 @@ class HaWashdataPanel extends HTMLElement {
     const dt = new Date(start);
     dt.setHours(p[0] || 0, p[1] || 0, p[2] || 0, 0);
     let off = (dt - start) / 1000;
-    if (off < -1) off += 86400;  // entered a time past midnight
     const full = (m.curve && m.curve.full_duration_s) || 0;
+    // The entered time is read against the cycle's own date, so a cycle that runs
+    // past midnight produces a negative offset and has to be shifted by a day.
+    // Only shift when the shifted value actually lands inside the cycle. A time
+    // simply entered before the start - the natural way to say "keep everything" -
+    // would otherwise become a point past the end, and the clamp below then pins
+    // the START handle to the last sample: the window collapses to a single
+    // sample and the trim that follows cannot be undone (upstream #366).
+    if (off < -1 && off + 86400 <= full) off += 86400;
     return Math.max(0, Math.min(full, off));
   }
   _trimInputToOffset(val) {
