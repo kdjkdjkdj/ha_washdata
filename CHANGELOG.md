@@ -5,6 +5,20 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.3.13 - 2026-08-11 (fork build)
+
+Fork build on top of upstream 0.5.3. Closes the two ways the trim editor could destroy the cycle it was trimming. Both are reported upstream as [#373](https://github.com/3dg1luk43/ha_washdata/issues/373); the field report that exposed the first one is [#366](https://github.com/3dg1luk43/ha_washdata/issues/366).
+
+### Fixed
+
+- **The clock-time trim mode no longer turns a start entered before the cycle into a cut at its end** (`ha-washdata-panel.js`): `_clockToOffset` reads the entered wall-clock time against the cycle's own date, so a cycle running past midnight yields a negative offset that has to be shifted by a day. The shift fired for *any* value more than a second below the start, and the clamp that follows then pinned the START handle to `full_duration_s` - the last sample. With the END handle clamped there as well, `Math.max(..., m.trim.start + 1)` left a one-second window at the very end of the curve. Entering a start earlier than the cycle is the natural way to say "keep everything", so the mode punished exactly the cautious input. The shift is now applied only when the shifted value lands inside the cycle; anything else clamps to the nearer boundary. Measured before the fix, cycle 21:00:00-23:33:00: a start of `20:59:58` produced the window `[9179, 9180]`, one second wide, and so did `20:44:00`.
+- **The store refuses a trim window that would keep a single sample** (`profile_store.py`): the filter in `trim_cycle_power_data` is inclusive, so a one-second window at the tail kept exactly one sample and the `if not kept` guard never fired. What the function then wrote back was not a shorter cycle but a destroyed one - `duration` 0.0, `energy_wh` 0.0, `signature` `None`, `start_time` moved onto that sample, `end_time` set to the same instant, and `power_data` replaced by the single point - and it returned `True` while logging nothing. Nothing about it is reversible, and because `full_duration_s` is then 0.0 the panel could no longer express a valid window either: every later trim attempt, in both input modes, was zero seconds wide and returned `True` again without changing anything. Measured on a 919-sample cycle: window `[9179, 9180]` -> 1 sample, `duration` 0.0; a follow-up trim of `[0, 11040]` -> still 1 sample. The guard now draws the line at fewer than two samples and returns `False`; both callers already surface that (WS task error, `ServiceValidationError` with the existing `trim_failed_empty_window` message, so no new translation keys).
+
+### Tests
+
+- `tests/test_trim_window_guard.py` - 5 cases: the one-second tail window and a zero-width window are refused and leave the record untouched (not even `meta.edited`), a two-sample window is still allowed, an ordinary tail trim is unaffected, and a refused trim leaves the cycle trimmable afterwards.
+- `devtools/panel_smoke.js` - 7 clock-mode checks, including the past-midnight case that legitimately needs the day shift. Reverting the two fixes turns 4 of them and 3 of the 5 tests red.
+
 ## 0.5.3.12 - 2026-08-06 (fork build)
 
 Fork build on top of upstream 0.5.3. Keeps the cadence statistics behind the operational suggestions describing operation rather than standby.
