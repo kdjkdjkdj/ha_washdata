@@ -666,6 +666,10 @@ class WashDataManager:
         config = CycleDetectorConfig(
             min_power=float(min_power),
             off_delay=int(off_delay),
+            # The detector branches on device_type in 16 places (dishwasher end-spike
+            # wait, keep_tail, standby-plateau finalize, ...).  Without this the field
+            # keeps its dataclass default and every appliance runs as a washing machine.
+            device_type=self.device_type,
             smoothing_window=smoothing_window,
             interrupted_min_seconds=interrupted_min_seconds,
             completion_min_seconds=completion_min_seconds,
@@ -2109,6 +2113,9 @@ class WashDataManager:
         ) * 3600.0
 
         # Apply all detector config updates
+        # device_type first: it gates whole detector code paths, so a stale value here
+        # would keep the appliance on the wrong branch until the next restart.
+        self.detector.config.device_type = self.device_type
         self.detector.config.min_power = new_min_power
         self.detector.config.off_delay = new_off_delay
         self.detector.config.smoothing_window = new_smoothing
