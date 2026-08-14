@@ -5,6 +5,18 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.3.14 - 2026-08-14 (fork build)
+
+Fork build on top of upstream 0.5.3. Makes the configured appliance type reach the cycle detector, which it never did. Reported upstream as [#378](https://github.com/3dg1luk43/ha_washdata/issues/378) by andrei-marinache; the analysis and the two-line fix are theirs, the field measurements below are from this fork.
+
+### Fixed
+
+- **The detector now runs the logic for the configured appliance type** (`manager.py`): `CycleDetectorConfig` carries a `device_type` field defaulting to `washing_machine`, and `CycleDetector` branches on it in 16 places - but nothing ever assigned it. It is absent from the 24 keyword arguments of the `CycleDetectorConfig(...)` call, and absent from the 23 in-place field updates in `async_reload_config`, so changing the type in the UI did not correct it either. Every dishwasher, dryer, washer-dryer and generic device therefore ran the washing-machine paths. Dead on a dishwasher: the end-spike wait and its quiet release, `keep_tail` on finish, the minimum-cycle-duration floor, the 85%-progress gate, the `off_delay` cap after a spike without a profile, and the terminal-tail match freeze in `_try_profile_match`. Smart Termination used the washer ratio 0.98 instead of 0.99/0.90. The defect stayed invisible because the manager keeps its own correct `self.device_type`, so phase naming, the per-device defaults and the ghost-cycle suppressor went on working. Measured by playground replay against two stored dishwasher stores (2026-08-14): on the first, six of seven Eco records replay as **two** cycles with the wrong device type and as **one** with the right one, and the end spike arms in 7 of 10 runs instead of 1 of 10, at a cost of +360 s on the short programmes; on the second, one run closes **4 h earlier** because the terminal-tail match freeze stops the match drifting to a longer look-alike profile. A dryer is close to unaffected - `dryer` sits beside `washing_machine` in every relevant tuple - and the only difference found is the Smart-Termination debounce, 180 s instead of 120 s.
+
+### Tests
+
+- `tests/test_issue_378_device_type_reaches_detector.py` - 4 cases: construction passes the entry type through for dishwasher, dryer and washing machine, and `async_reload_config` updates the field in place on a running detector. The detector config is pulled out of the constructor call by type rather than by position, and the reload case gives the mocked detector a real `CycleDetectorConfig` so the in-place update cannot be swallowed by the mock. Reverting the fix turns 3 of the 4 red; the `washing_machine` case stays green because that is the default the field fell back to.
+
 ## 0.5.3.13 - 2026-08-11 (fork build)
 
 Fork build on top of upstream 0.5.3. Closes the two ways the trim editor could destroy the cycle it was trimming. Both are reported upstream as [#373](https://github.com/3dg1luk43/ha_washdata/issues/373); the field report that exposed the first one is [#366](https://github.com/3dg1luk43/ha_washdata/issues/366).
