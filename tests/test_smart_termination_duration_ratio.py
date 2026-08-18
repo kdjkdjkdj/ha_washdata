@@ -28,8 +28,9 @@ Measured on the KD dryer, 7 runs: 5790 / 6120 / 7971 / 7250 / 7090 / 6300 / 6450
 against an expected 7120 s. The three runs above 6978 s (= 0.98 x 7120) ended via
 Smart Termination, the four below it all ended via timeout.
 
-The ratio is now ``CycleDetectorConfig.smart_termination_duration_ratio``; ``None``
-keeps the shipped per-device-type default, so an unconfigured install is unchanged.
+The ratio is now ``CycleDetectorConfig.smart_termination_duration_ratio``. The
+dataclass carries the shipped 0.98; manager/ws_api substitute the dishwasher's
+0.99 when the option is unset, so an unconfigured install is unchanged.
 """
 
 from __future__ import annotations
