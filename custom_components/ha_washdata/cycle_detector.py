@@ -150,9 +150,10 @@ class CycleDetectorConfig:
     # passive-drying phase before its final drain can absorb profile drift.
     dishwasher_end_spike_quiet_release: float = DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS
     # Fraction of the expected duration the cycle must reach before Smart
-    # Termination may fire. ``None`` = keep the shipped per-device-type default
-    # (0.98, dishwasher 0.99), so an unconfigured install behaves exactly as before.
-    smart_termination_duration_ratio: float | None = None
+    # Termination may fire. The per-device-type default (0.98, dishwasher 0.99)
+    # is resolved by whoever builds the config; an unconfigured install therefore
+    # behaves exactly as before.
+    smart_termination_duration_ratio: float = SMART_TERM_DURATION_RATIO_DEFAULT
     delay_detect_enabled: bool = False
     # Sustained seconds power must stay in the standby band (between
     # stop_threshold_w and start_threshold_w) before DELAY_WAIT engages.
@@ -1380,10 +1381,10 @@ class CycleDetector:
                     # 1. Require higher duration ratio for Smart path
                     # 2. Require debounce to be measured FROM entry into ENDING state
 
-                    # Configured override; None keeps the shipped default for the
-                    # device type, so an unconfigured install is bit-identical.
                     _cfg_ratio = getattr(
-                        self._config, "smart_termination_duration_ratio", None
+                        self._config,
+                        "smart_termination_duration_ratio",
+                        SMART_TERM_DURATION_RATIO_DEFAULT,
                     )
                     if self._config.device_type == "dishwasher":
                         # If the most-recent in-ENDING spike occurred at ≥90% of
@@ -1398,7 +1399,7 @@ class CycleDetector:
                             _cfg_ratio
                             if _cfg_ratio is not None
                             else SMART_TERM_DURATION_RATIO_DISHWASHER_DEFAULT
-                        )
+                        )  # builder resolves the dishwasher default; guard for direct construction
                         _esp_dur = getattr(self, "_end_spike_duration", 0.0)
                         if (
                             getattr(self, "_end_spike_seen", False)

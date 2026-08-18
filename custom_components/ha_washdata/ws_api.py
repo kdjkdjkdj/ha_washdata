@@ -75,12 +75,15 @@ from .const import (
     CONF_WATCHDOG_INTERVAL,
     DEFAULT_DEVICE_TYPE,
     DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS,
+    SMART_TERM_DURATION_RATIO_DEFAULT,
+    SMART_TERM_DURATION_RATIO_DISHWASHER_DEFAULT,
     SMART_TERM_DURATION_RATIO_MAX,
     SMART_TERM_DURATION_RATIO_MIN,
     DEFAULT_MAINTENANCE_REMINDER_CYCLES,
     DEFAULT_MIN_POWER,
     DEFAULT_OFF_DELAY,
     DEFAULT_OFF_DELAY_BY_DEVICE,
+    DEVICE_TYPE_DISHWASHER,
     DEVICE_TYPE_PUMP,
     MAINTENANCE_EVENT_TYPES,
     DEVICE_TYPES,
@@ -5262,17 +5265,17 @@ def _safe_float_finite(value: Any, default: float) -> float:
         return default
 
 
-def _opt_ratio_or_none(value: Any) -> float | None:
-    """Smart-Termination duration ratio, or None to keep the shipped default."""
-    if value is None or value == "":
-        return None
+def _opt_ratio_resolved(value: Any, device_type: Any) -> float:
+    """Smart-Termination duration ratio, resolved against the device-type default."""
     try:
         v = float(value)
+        if math.isfinite(v):
+            return max(SMART_TERM_DURATION_RATIO_MIN, min(SMART_TERM_DURATION_RATIO_MAX, v))
     except (TypeError, ValueError):
-        return None
-    if not math.isfinite(v):
-        return None
-    return max(SMART_TERM_DURATION_RATIO_MIN, min(SMART_TERM_DURATION_RATIO_MAX, v))
+        pass
+    if str(device_type or "") == DEVICE_TYPE_DISHWASHER:
+        return SMART_TERM_DURATION_RATIO_DISHWASHER_DEFAULT
+    return SMART_TERM_DURATION_RATIO_DEFAULT
 
 
 def _playground_base_config(manager: Any, entry: Any) -> CycleDetectorConfig:
@@ -5305,8 +5308,9 @@ def _playground_base_config(manager: Any, entry: Any) -> CycleDetectorConfig:
             opts.get(CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE),
             DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS,
         ),
-        smart_termination_duration_ratio=_opt_ratio_or_none(
-            opts.get(CONF_SMART_TERMINATION_DURATION_RATIO)
+        smart_termination_duration_ratio=_opt_ratio_resolved(
+            opts.get(CONF_SMART_TERMINATION_DURATION_RATIO),
+            opts.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE),
         ),
     )
 

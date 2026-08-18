@@ -46,7 +46,7 @@ from custom_components.ha_washdata.const import (
     SMART_TERM_DURATION_RATIO_MIN,
     SMART_TERM_DURATION_RATIO_PUMPOUT_CONFIRMED,
 )
-from custom_components.ha_washdata.manager import _opt_ratio
+from custom_components.ha_washdata.manager import _opt_ratio, _resolve_smart_term_ratio
 
 
 def _config(device_type: str, ratio: float | None) -> CycleDetectorConfig:
@@ -64,11 +64,28 @@ def _config(device_type: str, ratio: float | None) -> CycleDetectorConfig:
 # --- the shipped defaults survive an unconfigured install ---------------------
 
 
-def test_default_is_none_and_keeps_shipped_ratio():
-    """No option set -> the field is None, i.e. "use the built-in default"."""
-    assert CycleDetectorConfig(
-        min_power=5.0, off_delay=120
-    ).smart_termination_duration_ratio is None
+def test_config_default_is_the_shipped_ratio():
+    """A config built without the option carries the shipped 0.98."""
+    assert (
+        CycleDetectorConfig(min_power=5.0, off_delay=120).smart_termination_duration_ratio
+        == SMART_TERM_DURATION_RATIO_DEFAULT
+    )
+
+
+@pytest.mark.parametrize(
+    "device_type,expected",
+    [
+        (DEVICE_TYPE_DRYER, SMART_TERM_DURATION_RATIO_DEFAULT),
+        (DEVICE_TYPE_DISHWASHER, SMART_TERM_DURATION_RATIO_DISHWASHER_DEFAULT),
+    ],
+)
+def test_unset_option_resolves_to_the_device_type_default(device_type, expected):
+    """The dataclass cannot know the device type - the builder resolves it."""
+    assert _resolve_smart_term_ratio(None, device_type) == expected
+    assert _resolve_smart_term_ratio("", device_type) == expected
+    assert _resolve_smart_term_ratio("nonsense", device_type) == expected
+    # A configured value wins over both defaults.
+    assert _resolve_smart_term_ratio(0.88, device_type) == 0.88
 
 
 @pytest.mark.parametrize(

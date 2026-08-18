@@ -113,6 +113,9 @@ from .const import (
     CONF_ANTI_WRINKLE_IDLE_TIMEOUT,
     CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE,
     CONF_SMART_TERMINATION_DURATION_RATIO,
+    DEVICE_TYPE_DISHWASHER,
+    SMART_TERM_DURATION_RATIO_DEFAULT,
+    SMART_TERM_DURATION_RATIO_DISHWASHER_DEFAULT,
     SMART_TERM_DURATION_RATIO_MAX,
     SMART_TERM_DURATION_RATIO_MIN,
     DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS,
@@ -311,12 +314,11 @@ _SENSOR_SWAP_BLOCKED_STATES = frozenset(
 def _opt_ratio(raw: Any) -> float | None:
     """Parse the configured Smart-Termination duration ratio.
 
-    ``None`` (option never set, empty, or unparsable) means "keep the shipped
-    per-device-type default", so an install that never touches the field behaves
-    exactly as upstream does. A set value is clamped into
-    [SMART_TERM_DURATION_RATIO_MIN, SMART_TERM_DURATION_RATIO_MAX] - a ratio of 0
-    would fire Smart Termination the instant a profile matches, one above 1.0
-    could never be reached.
+    ``None`` (option never set, empty, or unparsable) means "fall back to the
+    shipped per-device-type default" - see :func:`_resolve_smart_term_ratio`. A
+    set value is clamped into [SMART_TERM_DURATION_RATIO_MIN,
+    SMART_TERM_DURATION_RATIO_MAX]: a ratio of 0 would fire Smart Termination the
+    instant a profile matches, one above 1.0 could never be reached.
     """
     if raw is None or raw == "":
         return None
@@ -327,6 +329,20 @@ def _opt_ratio(raw: Any) -> float | None:
     if val != val or val in (float("inf"), float("-inf")):  # NaN / inf
         return None
     return max(SMART_TERM_DURATION_RATIO_MIN, min(SMART_TERM_DURATION_RATIO_MAX, val))
+
+
+def _resolve_smart_term_ratio(raw: Any, device_type: Any) -> float:
+    """Configured ratio, or the shipped default for this device type.
+
+    Resolved here rather than in CycleDetectorConfig because the default depends
+    on the device type, which the dataclass does not know at field-default time.
+    """
+    ratio = _opt_ratio(raw)
+    if ratio is not None:
+        return ratio
+    if str(device_type or "") == DEVICE_TYPE_DISHWASHER:
+        return SMART_TERM_DURATION_RATIO_DISHWASHER_DEFAULT
+    return SMART_TERM_DURATION_RATIO_DEFAULT
 
 
 def _sanitize_ranking(raw_list: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
@@ -835,8 +851,9 @@ class WashDataManager:
                 )
             ),
             # None = shipped per-device-type default (0.98 / dishwasher 0.99).
-            smart_termination_duration_ratio=_opt_ratio(
-                config_entry.options.get(CONF_SMART_TERMINATION_DURATION_RATIO)
+            smart_termination_duration_ratio=_resolve_smart_term_ratio(
+                config_entry.options.get(CONF_SMART_TERMINATION_DURATION_RATIO),
+                self.device_type,
             ),
             delay_detect_enabled=bool(
                 config_entry.options.get(
@@ -2208,8 +2225,9 @@ class WashDataManager:
                 DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS,
             )
         )
-        new_smart_termination_duration_ratio = _opt_ratio(
-            config_entry.options.get(CONF_SMART_TERMINATION_DURATION_RATIO)
+        new_smart_termination_duration_ratio = _resolve_smart_term_ratio(
+            config_entry.options.get(CONF_SMART_TERMINATION_DURATION_RATIO),
+            self.device_type,
         )
         new_delay_detect_enabled = bool(
             config_entry.options.get(
