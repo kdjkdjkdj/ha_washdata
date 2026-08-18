@@ -66,7 +66,9 @@ def _config(device_type: str, ratio: float | None) -> CycleDetectorConfig:
 
 def test_default_is_none_and_keeps_shipped_ratio():
     """No option set -> the field is None, i.e. "use the built-in default"."""
-    assert CycleDetectorConfig(min_power=5.0).smart_termination_duration_ratio is None
+    assert CycleDetectorConfig(
+        min_power=5.0, off_delay=120
+    ).smart_termination_duration_ratio is None
 
 
 @pytest.mark.parametrize(
