@@ -137,6 +137,7 @@ CONF_ANTI_WRINKLE_MAX_DURATION = "anti_wrinkle_max_duration"  # Seconds to treat
 CONF_ANTI_WRINKLE_EXIT_POWER = "anti_wrinkle_exit_power"  # W threshold for true-off exit
 CONF_ANTI_WRINKLE_IDLE_TIMEOUT = "anti_wrinkle_idle_timeout"  # Seconds below exit power before anti-wrinkle ends
 CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE = "dishwasher_end_spike_quiet_release"  # Dishwasher: sustained-quiet seconds after expected duration that release the end-of-cycle drain wait early (#379)
+CONF_SMART_TERMINATION_DURATION_RATIO = "smart_termination_duration_ratio"  # Fraction of the matched profile's expected duration a cycle must reach before Smart Termination may fire
 CONF_DELAY_START_DETECT_ENABLED = "delay_start_detect_enabled"  # Enable delayed-start detection
 CONF_DELAY_CONFIRM_SECONDS = "delay_confirm_seconds"  # Seconds power must stay in standby band before DELAY_WAIT engages
 CONF_DELAY_TIMEOUT_HOURS = "delay_timeout_hours"  # Safety timeout (hours) while waiting to start
@@ -498,6 +499,23 @@ MATCH_AMBIGUITY_MARGIN = 0.05
 # but genuine prefix pairs like Quick 46 vs Normal 88 min (ratio 1.91) always do.
 SMART_TERM_LANDSCAPE_RATIO = 1.5       # candidate must be >= 1.5× the matched duration
 SMART_TERM_LANDSCAPE_MIN_SHAPE = 0.40  # minimum shape score (pre-Stage-4) to qualify
+
+# Fraction of the matched profile's expected duration a running cycle must reach
+# before the Smart-Termination fast path may fire (the `duration_not_reached`
+# gate).  The shipped values are a mean-vs-median mismatch for appliances whose
+# real runtime varies with the load: a dryer's expected duration is the profile
+# mean, so every run shorter than that mean - roughly half of them - can never
+# reach 98% of it and falls through to the power timeout.  Configurable per
+# device via CONF_SMART_TERMINATION_DURATION_RATIO; unset keeps the shipped
+# behaviour exactly.
+SMART_TERM_DURATION_RATIO_DEFAULT = 0.98            # washing machine, dryer, washer-dryer, ...
+SMART_TERM_DURATION_RATIO_DISHWASHER_DEFAULT = 0.99  # dishwasher without a confirmed terminal drain
+# Relaxation once the terminal pump-out is confirmed (spike at >= 90% of expected).
+# Not configurable: it is a safety relaxation, not a tuning knob.  A configured
+# ratio below this value still wins, so the setting can only ever loosen the gate.
+SMART_TERM_DURATION_RATIO_PUMPOUT_CONFIRMED = 0.90
+SMART_TERM_DURATION_RATIO_MIN = 0.50
+SMART_TERM_DURATION_RATIO_MAX = 1.00
 
 # Number of points in the compact reference-profile curve exposed on the
 # `_program` sensor (`profile_store.reference_curve`). Chosen so the resulting
