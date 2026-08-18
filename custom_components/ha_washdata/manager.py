@@ -112,7 +112,9 @@ from .const import (
     CONF_ANTI_WRINKLE_EXIT_POWER,
     CONF_ANTI_WRINKLE_IDLE_TIMEOUT,
     CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE,
+    CONF_PREFIX_GUARD_PREFIX_SCORE,
     CONF_SMART_TERMINATION_DURATION_RATIO,
+    DEFAULT_PREFIX_GUARD_PREFIX_SCORE,
     DEVICE_TYPE_DISHWASHER,
     SMART_TERM_DURATION_RATIO_DEFAULT,
     SMART_TERM_DURATION_RATIO_DISHWASHER_DEFAULT,
@@ -629,6 +631,11 @@ class WashDataManager:
         )
         self.profile_store.dtw_bandwidth = float(
             config_entry.options.get(CONF_DTW_BANDWIDTH, DEFAULT_DTW_BANDWIDTH)
+        )
+        self.profile_store.prefix_guard_prefix_score = bool(
+            config_entry.options.get(
+                CONF_PREFIX_GUARD_PREFIX_SCORE, DEFAULT_PREFIX_GUARD_PREFIX_SCORE
+            )
         )
         # Stage-4 energy discriminator: integrated energy for WM/washer-dryer,
         # mean power elsewhere (see analysis.stage4_energy_mode).
@@ -2140,6 +2147,11 @@ class WashDataManager:
         )
         self.profile_store.dtw_bandwidth = float(
             config_entry.options.get(CONF_DTW_BANDWIDTH, DEFAULT_DTW_BANDWIDTH)
+        )
+        self.profile_store.prefix_guard_prefix_score = bool(
+            config_entry.options.get(
+                CONF_PREFIX_GUARD_PREFIX_SCORE, DEFAULT_PREFIX_GUARD_PREFIX_SCORE
+            )
         )
         # Stage-4 energy discriminator: integrated energy for WM/washer-dryer,
         # mean power elsewhere (see analysis.stage4_energy_mode).
