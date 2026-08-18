@@ -52,6 +52,9 @@ from .const import (
     DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS,
     DISHWASHER_END_SPIKE_WAIT_SECONDS,
     DISHWASHER_SMART_TERMINATION_DEBOUNCE_SECONDS,
+    SMART_TERM_DURATION_RATIO_DEFAULT,
+    SMART_TERM_DURATION_RATIO_DISHWASHER_DEFAULT,
+    SMART_TERM_DURATION_RATIO_PUMPOUT_CONFIRMED,
     WASHER_SMART_TERMINATION_DEBOUNCE_MAX_SECONDS,
     STARTING_PAUSED_TRUE_OFF_TIMEOUT_SECONDS,
     DISHWASHER_MATCH_FREEZE_QUIET_SECONDS,
@@ -146,6 +149,10 @@ class CycleDetectorConfig:
     # the shipped constant; per-device configurable so a machine with a long silent
     # passive-drying phase before its final drain can absorb profile drift.
     dishwasher_end_spike_quiet_release: float = DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS
+    # Fraction of the expected duration the cycle must reach before Smart
+    # Termination may fire. ``None`` = keep the shipped per-device-type default
+    # (0.98, dishwasher 0.99), so an unconfigured install behaves exactly as before.
+    smart_termination_duration_ratio: float | None = None
     delay_detect_enabled: bool = False
     # Sustained seconds power must stay in the standby band (between
     # stop_threshold_w and start_threshold_w) before DELAY_WAIT engages.
@@ -1373,6 +1380,11 @@ class CycleDetector:
                     # 1. Require higher duration ratio for Smart path
                     # 2. Require debounce to be measured FROM entry into ENDING state
 
+                    # Configured override; None keeps the shipped default for the
+                    # device type, so an unconfigured install is bit-identical.
+                    _cfg_ratio = getattr(
+                        self._config, "smart_termination_duration_ratio", None
+                    )
                     if self._config.device_type == "dishwasher":
                         # If the most-recent in-ENDING spike occurred at ≥90% of
                         # expected, it is the terminal pump-out, not a mid-cycle
@@ -1382,17 +1394,31 @@ class CycleDetector:
                         # still terminate cleanly.  Keeping the 0.99 gate for
                         # spikes at <90% prevents premature closes during the
                         # passive Dry phase that follows the pre-final-rinse drain.
+                        _base_ratio = (
+                            _cfg_ratio
+                            if _cfg_ratio is not None
+                            else SMART_TERM_DURATION_RATIO_DISHWASHER_DEFAULT
+                        )
                         _esp_dur = getattr(self, "_end_spike_duration", 0.0)
                         if (
                             getattr(self, "_end_spike_seen", False)
                             and self._expected_duration > 0
                             and _esp_dur >= self._expected_duration * 0.90
                         ):
-                            smart_ratio = 0.90  # pump-out confirmed near end
+                            # pump-out confirmed near end. min() so a configured
+                            # ratio below the relaxation still wins - the setting
+                            # can only ever loosen the gate, never tighten it.
+                            smart_ratio = min(
+                                SMART_TERM_DURATION_RATIO_PUMPOUT_CONFIRMED, _base_ratio
+                            )
                         else:
-                            smart_ratio = 0.99  # conservative: wait for expected duration
+                            smart_ratio = _base_ratio  # conservative: wait for expected duration
                     else:
-                        smart_ratio = 0.98
+                        smart_ratio = (
+                            _cfg_ratio
+                            if _cfg_ratio is not None
+                            else SMART_TERM_DURATION_RATIO_DEFAULT
+                        )
 
                     is_confident_match = (
                         getattr(self, "_last_match_confidence", 0.0) >= 0.4

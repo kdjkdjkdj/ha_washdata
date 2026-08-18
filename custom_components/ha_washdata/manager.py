@@ -112,6 +112,9 @@ from .const import (
     CONF_ANTI_WRINKLE_EXIT_POWER,
     CONF_ANTI_WRINKLE_IDLE_TIMEOUT,
     CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE,
+    CONF_SMART_TERMINATION_DURATION_RATIO,
+    SMART_TERM_DURATION_RATIO_MAX,
+    SMART_TERM_DURATION_RATIO_MIN,
     DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS,
     CONF_DELAY_START_DETECT_ENABLED,
     CONF_DELAY_CONFIRM_SECONDS,
@@ -303,6 +306,27 @@ _SENSOR_SWAP_BLOCKED_STATES = frozenset(
         STATE_ANTI_WRINKLE,
     }
 )
+
+
+def _opt_ratio(raw: Any) -> float | None:
+    """Parse the configured Smart-Termination duration ratio.
+
+    ``None`` (option never set, empty, or unparsable) means "keep the shipped
+    per-device-type default", so an install that never touches the field behaves
+    exactly as upstream does. A set value is clamped into
+    [SMART_TERM_DURATION_RATIO_MIN, SMART_TERM_DURATION_RATIO_MAX] - a ratio of 0
+    would fire Smart Termination the instant a profile matches, one above 1.0
+    could never be reached.
+    """
+    if raw is None or raw == "":
+        return None
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if val != val or val in (float("inf"), float("-inf")):  # NaN / inf
+        return None
+    return max(SMART_TERM_DURATION_RATIO_MIN, min(SMART_TERM_DURATION_RATIO_MAX, val))
 
 
 def _sanitize_ranking(raw_list: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
@@ -809,6 +833,10 @@ class WashDataManager:
                     CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE,
                     DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS,
                 )
+            ),
+            # None = shipped per-device-type default (0.98 / dishwasher 0.99).
+            smart_termination_duration_ratio=_opt_ratio(
+                config_entry.options.get(CONF_SMART_TERMINATION_DURATION_RATIO)
             ),
             delay_detect_enabled=bool(
                 config_entry.options.get(
@@ -2180,6 +2208,9 @@ class WashDataManager:
                 DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS,
             )
         )
+        new_smart_termination_duration_ratio = _opt_ratio(
+            config_entry.options.get(CONF_SMART_TERMINATION_DURATION_RATIO)
+        )
         new_delay_detect_enabled = bool(
             config_entry.options.get(
                 CONF_DELAY_START_DETECT_ENABLED, DEFAULT_DELAY_START_DETECT_ENABLED
@@ -2219,6 +2250,7 @@ class WashDataManager:
         self.detector.config.anti_wrinkle_exit_power = new_anti_wrinkle_exit_power
         self.detector.config.anti_wrinkle_idle_timeout = new_anti_wrinkle_idle_timeout
         self.detector.config.dishwasher_end_spike_quiet_release = new_dishwasher_end_spike_quiet_release
+        self.detector.config.smart_termination_duration_ratio = new_smart_termination_duration_ratio
         self.detector.config.delay_detect_enabled = new_delay_detect_enabled
         self.detector.config.delay_confirm_seconds = new_delay_confirm_seconds
         self.detector.config.delay_timeout_seconds = new_delay_timeout_seconds

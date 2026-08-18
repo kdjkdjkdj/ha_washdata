@@ -41,6 +41,7 @@ from .const import (
     CONF_COMPLETION_MIN_SECONDS,
     CONF_DEVICE_TYPE,
     CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE,
+    CONF_SMART_TERMINATION_DURATION_RATIO,
     CONF_DOOR_SENSOR_ENTITY,
     CONF_ANTI_WRINKLE_EXIT_POWER,
     CONF_ANTI_WRINKLE_MAX_POWER,
@@ -74,6 +75,8 @@ from .const import (
     CONF_WATCHDOG_INTERVAL,
     DEFAULT_DEVICE_TYPE,
     DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS,
+    SMART_TERM_DURATION_RATIO_MAX,
+    SMART_TERM_DURATION_RATIO_MIN,
     DEFAULT_MAINTENANCE_REMINDER_CYCLES,
     DEFAULT_MIN_POWER,
     DEFAULT_OFF_DELAY,
@@ -1392,6 +1395,26 @@ async def ws_set_options(
             new_options[CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE] = (
                 DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS
             )
+
+    # Smart-Termination duration ratio: an empty submission means "back to the
+    # shipped per-device-type default", so drop the key instead of storing 0.0.
+    # A set value is clamped - 0 would fire the moment a profile matches, >1 could
+    # never be reached.
+    if CONF_SMART_TERMINATION_DURATION_RATIO in new_options:
+        _raw_ratio = new_options[CONF_SMART_TERMINATION_DURATION_RATIO]
+        if _raw_ratio is None or _raw_ratio == "":
+            new_options.pop(CONF_SMART_TERMINATION_DURATION_RATIO, None)
+        else:
+            try:
+                _ratio = float(_raw_ratio)
+                if not math.isfinite(_ratio):
+                    raise ValueError("non-finite")
+                new_options[CONF_SMART_TERMINATION_DURATION_RATIO] = max(
+                    SMART_TERM_DURATION_RATIO_MIN,
+                    min(SMART_TERM_DURATION_RATIO_MAX, _ratio),
+                )
+            except (TypeError, ValueError):
+                new_options.pop(CONF_SMART_TERMINATION_DURATION_RATIO, None)
 
     # Partition identity out of options: the display name is carried by the
     # entry title, never persisted in options (matches the config-flow invariant
@@ -5239,6 +5262,19 @@ def _safe_float_finite(value: Any, default: float) -> float:
         return default
 
 
+def _opt_ratio_or_none(value: Any) -> float | None:
+    """Smart-Termination duration ratio, or None to keep the shipped default."""
+    if value is None or value == "":
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(v):
+        return None
+    return max(SMART_TERM_DURATION_RATIO_MIN, min(SMART_TERM_DURATION_RATIO_MAX, v))
+
+
 def _playground_base_config(manager: Any, entry: Any) -> CycleDetectorConfig:
     """Resolve the device's live CycleDetectorConfig as the simulation base.
 
@@ -5268,6 +5304,9 @@ def _playground_base_config(manager: Any, entry: Any) -> CycleDetectorConfig:
         dishwasher_end_spike_quiet_release=_safe_float_finite(
             opts.get(CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE),
             DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS,
+        ),
+        smart_termination_duration_ratio=_opt_ratio_or_none(
+            opts.get(CONF_SMART_TERMINATION_DURATION_RATIO)
         ),
     )
 
