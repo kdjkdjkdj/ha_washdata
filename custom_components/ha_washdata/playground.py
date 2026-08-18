@@ -55,6 +55,7 @@ from .const import (
     CONF_ANTI_WRINKLE_IDLE_TIMEOUT,
     CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE,
     CONF_SMART_TERMINATION_DURATION_RATIO,
+    DEFAULT_PREFIX_GUARD_PREFIX_SCORE,
     CONF_ANTI_WRINKLE_MAX_DURATION,
     CONF_ANTI_WRINKLE_MAX_POWER,
     CONF_COMPLETION_MIN_SECONDS,
@@ -467,6 +468,11 @@ def _matching_config(store: Any) -> dict[str, Any]:
         "dtw_bandwidth": float(getattr(store, "dtw_bandwidth", 0.2)),
         # Mirror the live Stage-4 energy discriminator so the sim is byte-identical.
         "energy_mode": str(getattr(store, "energy_mode", "mean")),
+        # ... and the look-alike guard's comparison basis, so a replay blocks
+        # Smart Termination exactly where the live detector does.
+        "prefix_guard_prefix_score": bool(
+            getattr(store, "prefix_guard_prefix_score", DEFAULT_PREFIX_GUARD_PREFIX_SCORE)
+        ),
     }
     try:
         overrides = store._matching_overrides()  # pylint: disable=protected-access

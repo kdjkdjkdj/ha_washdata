@@ -41,6 +41,7 @@ from .const import (
     MATCH_MAE_PEAK_FLOOR,
     MATCH_MAE_REF_PEAK,
     MATCH_MAE_SCALE,
+    MATCH_PREFIX_MIN_POINTS,
     STAGE4_INTEGRATED_ENERGY_DEVICE_TYPES,
 )
 
@@ -341,6 +342,9 @@ def compute_matches_worker(
     en_weight = float(config.get("energy_weight", MATCH_ENERGY_WEIGHT))
     dur_scale = float(config.get("duration_scale", MATCH_DURATION_SCALE))
     en_scale = float(config.get("energy_scale", MATCH_ENERGY_SCALE))
+    # Fork: score longer candidates against their truncated prefix for the
+    # Smart-Termination look-alike guard. False = upstream whole-curve behaviour.
+    prefix_guard = bool(config.get("prefix_guard_prefix_score", True))
 
     curr_arr = np.array(current_power)
 
@@ -388,38 +392,71 @@ def compute_matches_worker(
         # Resample the current trace once — it's the same for every candidate.
         curr_resampled = _resample_to(curr_arr, MATCH_DTW_RESAMPLE_N)
 
-        for cand in to_refine:
-            sample_arr = np.array(cand["sample"])
+        def _dtw_for(sample_arr: Any) -> tuple[float, float]:
+            """(dtw_score, norm_dist) for one sample curve, honouring dtw_mode.
 
+            Extracted so the prefix guard below can score a truncated curve on
+            exactly the same scale as the full one - a second, hand-mirrored
+            copy of the branch would drift apart on the next tuning change.
+            """
             if dtw_mode == "legacy":
                 # Original behaviour: raw sequences, distance / len(current),
                 # fixed absolute-watt scale (not peak-relative).
                 dtw_dist = compute_dtw_lite(curr_arr, sample_arr, band_width_ratio=dtw_bandwidth)
                 n_points = len(curr_arr)
                 norm_dist = (dtw_dist / n_points) if n_points > 0 else 999.0
-                dtw_score = 1.0 / (1.0 + norm_dist / MATCH_DTW_DIST_SCALE)
-            elif dtw_mode == "ensemble":
+                return 1.0 / (1.0 + norm_dist / MATCH_DTW_DIST_SCALE), norm_dist
+            if dtw_mode == "ensemble":
                 # Blend the level-based (L1) and shape-based (derivative) DTW
                 # scores; they are complementary signals.
                 s_l1 = _dtw_component_score(curr_arr, sample_arr, current_peak, dtw_bandwidth, False, l1_scale, curr_resampled=curr_resampled)
                 s_dd = _dtw_component_score(curr_arr, sample_arr, current_peak, dtw_bandwidth, True, ddtw_scale, curr_resampled=curr_resampled)
-                dtw_score = ensemble_w * s_l1 + (1.0 - ensemble_w) * s_dd
-                norm_dist = 0.0  # composite; per-component distance not meaningful
-            else:
-                # "scaled" (default) or "ddtw": resample both onto one grid so the
-                # band and normalisation are consistent, then express the distance
-                # relative to the current peak (behaviour-neutral at
-                # MATCH_MAE_REF_PEAK), mirroring the Stage-2 MAE treatment.
-                use_deriv = dtw_mode == "ddtw"
-                scale = ddtw_scale if use_deriv else l1_scale
-                dtw_score = _dtw_component_score(
-                    curr_arr, sample_arr, current_peak, dtw_bandwidth, use_deriv, scale, curr_resampled=curr_resampled
-                )
-                norm_dist = 0.0
+                # composite; per-component distance not meaningful
+                return ensemble_w * s_l1 + (1.0 - ensemble_w) * s_dd, 0.0
+            # "scaled" (default) or "ddtw": resample both onto one grid so the
+            # band and normalisation are consistent, then express the distance
+            # relative to the current peak (behaviour-neutral at
+            # MATCH_MAE_REF_PEAK), mirroring the Stage-2 MAE treatment.
+            use_deriv = dtw_mode == "ddtw"
+            scale = ddtw_scale if use_deriv else l1_scale
+            return _dtw_component_score(
+                curr_arr, sample_arr, current_peak, dtw_bandwidth, use_deriv, scale, curr_resampled=curr_resampled
+            ), 0.0
+
+        for cand in to_refine:
+            sample_arr = np.array(cand["sample"])
+
+            dtw_score, norm_dist = _dtw_for(sample_arr)
 
             cand["original_score"] = float(cand["score"])
             cand["score"] = float(blend * cand["score"] + (1.0 - blend) * dtw_score)
             cand["dtw_dist"] = float(norm_dist)
+
+            # --- prefix score --------------------------------------------------
+            # The "longer look-alike" guard in ProfileStore has to answer
+            # "could this trace be the FIRST current_duration seconds of that
+            # longer program?".  cand["score"] cannot answer it: DTW is scale
+            # free in time, so a 36-min cycle scores high against a 196-min
+            # program whose overall silhouette is similar even when their first
+            # 36 minutes look nothing alike (KD dishwasher: three heating blocks
+            # in Kurz against one in the same span of Eco).  Score the truncated
+            # sample on the same Stage-2 + Stage-3 scale so the guard's threshold
+            # keeps meaning the same thing.  Skipped entirely when the guard is
+            # configured back to its whole-curve behaviour.
+            if prefix_guard:
+                prof_dur = float(cand.get("profile_duration") or 0.0)
+                if prof_dur > 0.0 and 0.0 < current_duration < prof_dur:
+                    k = int(round(len(sample_arr) * (current_duration / prof_dur)))
+                    k = min(k, len(sample_arr) - 1)
+                    if k >= MATCH_PREFIX_MIN_POINTS:
+                        prefix_arr = sample_arr[:k]
+                        p_stage2, _p_metrics, _p_offset = find_best_alignment(
+                            current_power, prefix_arr.tolist(), 1.0, corr_weight=corr_weight
+                        )
+                        p_dtw, _p_dist = _dtw_for(prefix_arr)
+                        cand["prefix_score"] = float(
+                            blend * p_stage2 + (1.0 - blend) * p_dtw
+                        )
 
         candidates.sort(key=lambda x: x["score"], reverse=True)
 

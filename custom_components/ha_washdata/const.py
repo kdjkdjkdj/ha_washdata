@@ -137,6 +137,7 @@ CONF_ANTI_WRINKLE_MAX_DURATION = "anti_wrinkle_max_duration"  # Seconds to treat
 CONF_ANTI_WRINKLE_EXIT_POWER = "anti_wrinkle_exit_power"  # W threshold for true-off exit
 CONF_ANTI_WRINKLE_IDLE_TIMEOUT = "anti_wrinkle_idle_timeout"  # Seconds below exit power before anti-wrinkle ends
 CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE = "dishwasher_end_spike_quiet_release"  # Dishwasher: sustained-quiet seconds after expected duration that release the end-of-cycle drain wait early (#379)
+CONF_PREFIX_GUARD_PREFIX_SCORE = "prefix_guard_prefix_score"  # Smart-Termination look-alike guard: compare against the candidate's prefix (True) or its whole curve (upstream)
 CONF_SMART_TERMINATION_DURATION_RATIO = "smart_termination_duration_ratio"  # Fraction of the matched profile's expected duration a cycle must reach before Smart Termination may fire
 CONF_DELAY_START_DETECT_ENABLED = "delay_start_detect_enabled"  # Enable delayed-start detection
 CONF_DELAY_CONFIRM_SECONDS = "delay_confirm_seconds"  # Seconds power must stay in standby band before DELAY_WAIT engages
@@ -486,6 +487,10 @@ MATCH_DTW_REFINE_TOP_N = 5         # DTW is applied to this many top candidates
 # off 62.4%, legacy 66.4%, scaled 69.9%, ddtw 69.0%, ensemble(w=0.7,dd=30) 70.7%.
 DEFAULT_DTW_MODE = "ensemble"
 MATCH_DTW_RESAMPLE_N = 200         # common grid length for "scaled"/"ddtw" DTW
+# Shortest truncated sample the prefix guard will score.  Below this the
+# resampled curve carries no shape left to compare and the score becomes
+# noise, so the guard falls back to its whole-curve behaviour.
+MATCH_PREFIX_MIN_POINTS = 8
 MATCH_DDTW_DIST_SCALE = 30.0       # half-saturation for derivative-DTW distance
 MATCH_DTW_ENSEMBLE_W = 0.7         # weight on L1 vs DDTW in "ensemble" mode
 # Ambiguity: top1-top2 score gap below this flags the match as ambiguous.
@@ -499,6 +504,12 @@ MATCH_AMBIGUITY_MARGIN = 0.05
 # but genuine prefix pairs like Quick 46 vs Normal 88 min (ratio 1.91) always do.
 SMART_TERM_LANDSCAPE_RATIO = 1.5       # candidate must be >= 1.5× the matched duration
 SMART_TERM_LANDSCAPE_MIN_SHAPE = 0.40  # minimum shape score (pre-Stage-4) to qualify
+# Fork: score the longer candidate over its first `current_duration` seconds
+# instead of its whole time-normalised curve. DTW is scale free in time, so a
+# short cycle clears the 0.40 bar against a much longer programme whose overall
+# silhouette is similar even when their opening minutes look nothing alike -
+# which is not the question the guard is asking. False = upstream behaviour.
+DEFAULT_PREFIX_GUARD_PREFIX_SCORE = True
 
 # Fraction of the matched profile's expected duration a running cycle must reach
 # before the Smart-Termination fast path may fire (the `duration_not_reached`

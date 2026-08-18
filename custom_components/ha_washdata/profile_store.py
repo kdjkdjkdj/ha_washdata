@@ -64,6 +64,7 @@ from .const import (
     DEFAULT_MAX_FULL_TRACES_PER_PROFILE,
     DEFAULT_MAX_FULL_TRACES_UNLABELED,
     DEFAULT_DTW_BANDWIDTH,
+    DEFAULT_PREFIX_GUARD_PREFIX_SCORE,
 )
 from .features import compute_signature
 from .signal_processing import resample_uniform, resample_adaptive, Segment, integrate_wh, energy_gap_threshold_s
@@ -1224,6 +1225,9 @@ class ProfileStore:
         self._match_threshold = match_threshold
         self._unmatch_threshold = unmatch_threshold
         self.dtw_bandwidth: float = DEFAULT_DTW_BANDWIDTH
+        # Fork: Smart-Termination look-alike guard compares against the
+        # candidate's prefix; the manager sets it from the device option.
+        self.prefix_guard_prefix_score: bool = DEFAULT_PREFIX_GUARD_PREFIX_SCORE
         # Stage-4 energy-agreement mode ("mean"|"integrated"); the manager sets it
         # from the device type via analysis.stage4_energy_mode. Default "mean"
         # keeps behaviour byte-identical until wired.
@@ -5320,6 +5324,7 @@ class ProfileStore:
                 "max_duration_ratio": self._max_duration_ratio,
                 "dtw_bandwidth": self.dtw_bandwidth,
                 "energy_mode": self.energy_mode,
+                "prefix_guard_prefix_score": self.prefix_guard_prefix_score,
                 # On-device tuned scoring weights (opt-in); empty = shipped defaults.
                 **self._matching_overrides(),
             }
@@ -5397,11 +5402,32 @@ class ProfileStore:
         # short cycle. Signal cycle_detector to block Smart Termination; the
         # power-based fallback timeout will decide instead.
         best_dur = best_duration or 0.0
-        is_prefix_ambiguous = best_dur > 0 and any(
-            float(c.get("profile_duration") or 0) > best_dur * SMART_TERM_LANDSCAPE_RATIO
-            and float(c.get("shape_score", c.get("score", 0))) >= SMART_TERM_LANDSCAPE_MIN_SHAPE
-            for c in candidates[1:]
-        )
+        is_prefix_ambiguous = False
+        for _cand in candidates[1:]:
+            _cand_dur = float(_cand.get("profile_duration") or 0)
+            if best_dur <= 0 or _cand_dur <= best_dur * SMART_TERM_LANDSCAPE_RATIO:
+                continue
+            # prefix_score answers the question this guard actually asks and is
+            # preferred whenever the worker could compute it.  It is absent for
+            # candidates outside the DTW-refined top-N, when DTW is off, and when
+            # the option is switched back to whole-curve comparison; there the
+            # shape_score decides, so the guard is never *less* cautious.
+            _prefix = _cand.get("prefix_score") if self.prefix_guard_prefix_score else None
+            _used = float(
+                _prefix if _prefix is not None
+                else _cand.get("shape_score", _cand.get("score", 0))
+            )
+            if _used >= SMART_TERM_LANDSCAPE_MIN_SHAPE:
+                is_prefix_ambiguous = True
+                self._logger.debug(
+                    "Prefix guard: '%s' (%.0fs) blocks Smart Termination for "
+                    "'%s' (%.0fs) - %s %.3f >= %.2f",
+                    _cand.get("name"), _cand_dur, best_name, best_dur,
+                    "prefix_score" if _prefix is not None
+                    else "shape_score (no prefix score available)",
+                    _used, SMART_TERM_LANDSCAPE_MIN_SHAPE,
+                )
+                break
 
         return MatchResult(
             best_name,
