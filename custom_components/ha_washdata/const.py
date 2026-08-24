@@ -139,6 +139,7 @@ CONF_ANTI_WRINKLE_IDLE_TIMEOUT = "anti_wrinkle_idle_timeout"  # Seconds below ex
 CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE = "dishwasher_end_spike_quiet_release"  # Dishwasher: sustained-quiet seconds after expected duration that release the end-of-cycle drain wait early (#379)
 CONF_SMART_TERMINATION_DURATION_RATIO = "smart_termination_duration_ratio"  # Fraction of the matched profile's expected (mean) duration that Smart Termination requires before it may fire (#393)
 CONF_DELAY_START_DETECT_ENABLED = "delay_start_detect_enabled"  # Enable delayed-start detection
+CONF_CURVE_PREROLL_SECONDS = "curve_preroll_seconds"  # Seconds of pre-start readings carried into the stored curve (0 = off)
 CONF_DELAY_CONFIRM_SECONDS = "delay_confirm_seconds"  # Seconds power must stay in standby band before DELAY_WAIT engages
 CONF_DELAY_TIMEOUT_HOURS = "delay_timeout_hours"  # Safety timeout (hours) while waiting to start
 # Note: the deprecated 0.4.5 drain-spike keys (delay_drain_*) are stripped during
@@ -427,6 +428,26 @@ DEFAULT_ANTI_WRINKLE_IDLE_TIMEOUT = 120.0  # s
 # ignored because they don't sustain long enough to satisfy the normal
 # start-duration gate.
 DEFAULT_DELAY_START_DETECT_ENABLED = False
+# Curve pre-roll (fork): how many seconds of readings from aborted start probes
+# may be carried into the stored cycle.  A cycle's curve begins at the OFF ->
+# STARTING transition that actually committed, so every probe that aborted as a
+# false start takes its samples with it - measured over 10 days, 10 of 22 cycles
+# lost head this way, both dishwashers on every single run (195-217 s, 14-17
+# points of real ramp: programme selection, door lock, first fill).
+#
+# 0 disables the whole mechanism, which is the default: an earlier cycle start
+# lengthens the stored duration and therefore feeds `avg_duration` and every
+# gate derived from it, so existing profiles must not change behaviour unless
+# the setting is deliberately raised.
+DEFAULT_CURVE_PREROLL_SECONDS = 0.0  # s - 0 = keep the current behaviour
+# A quiet stretch longer than this ends the pre-roll chain: the carried head has
+# to be one continuous approach, not an isolated blip that happens to sit inside
+# the window.  Measured over 22 cycles on six appliances - inside a genuine ramp
+# the longest sub-threshold stretch is 6-60 s (both dishwashers 10-21 s), while
+# an unrelated crease-guard tumble minutes before a dryer start sits behind
+# 116-120 s of quiet.  90 s clears the widest real ramp and rejects both strays.
+PREROLL_CHAIN_BREAK_SECONDS = 90.0
+
 DEFAULT_DELAY_CONFIRM_SECONDS = 60.0  # s - sustained standby before DELAY_WAIT engages
 DEFAULT_DELAY_TIMEOUT_HOURS = 8.0  # h - give up waiting after this long
 

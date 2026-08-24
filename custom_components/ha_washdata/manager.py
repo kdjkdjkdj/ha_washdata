@@ -118,6 +118,7 @@ from .const import (
     DEFAULT_SMART_TERMINATION_DURATION_RATIO,
     DEFAULT_SMART_TERMINATION_DURATION_RATIO_BY_DEVICE,
     CONF_DELAY_START_DETECT_ENABLED,
+    CONF_CURVE_PREROLL_SECONDS,
     CONF_DELAY_CONFIRM_SECONDS,
     CONF_DELAY_TIMEOUT_HOURS,
     CONF_PUMP_STUCK_DURATION,
@@ -161,6 +162,7 @@ from .const import (
     DEFAULT_ANTI_WRINKLE_EXIT_POWER,
     DEFAULT_ANTI_WRINKLE_IDLE_TIMEOUT,
     DEFAULT_DELAY_START_DETECT_ENABLED,
+    DEFAULT_CURVE_PREROLL_SECONDS,
     DEFAULT_DELAY_CONFIRM_SECONDS,
     DEFAULT_DELAY_TIMEOUT_HOURS,
     DEFAULT_PROFILE_MATCH_MAX_DURATION_RATIO,
@@ -847,6 +849,11 @@ class WashDataManager:
             delay_detect_enabled=bool(
                 config_entry.options.get(
                     CONF_DELAY_START_DETECT_ENABLED, DEFAULT_DELAY_START_DETECT_ENABLED
+                )
+            ),
+            curve_preroll_seconds=float(
+                config_entry.options.get(
+                    CONF_CURVE_PREROLL_SECONDS, DEFAULT_CURVE_PREROLL_SECONDS
                 )
             ),
             delay_confirm_seconds=float(
@@ -2261,6 +2268,11 @@ class WashDataManager:
                 CONF_DELAY_START_DETECT_ENABLED, DEFAULT_DELAY_START_DETECT_ENABLED
             )
         )
+        new_curve_preroll_seconds = float(
+            config_entry.options.get(
+                CONF_CURVE_PREROLL_SECONDS, DEFAULT_CURVE_PREROLL_SECONDS
+            )
+        )
         new_delay_confirm_seconds = float(
             config_entry.options.get(
                 CONF_DELAY_CONFIRM_SECONDS, DEFAULT_DELAY_CONFIRM_SECONDS
@@ -2297,6 +2309,7 @@ class WashDataManager:
         self.detector.config.dishwasher_end_spike_quiet_release = new_dishwasher_end_spike_quiet_release
         self.detector.config.smart_termination_duration_ratio = new_smart_termination_duration_ratio
         self.detector.config.delay_detect_enabled = new_delay_detect_enabled
+        self.detector.config.curve_preroll_seconds = new_curve_preroll_seconds
         self.detector.config.delay_confirm_seconds = new_delay_confirm_seconds
         self.detector.config.delay_timeout_seconds = new_delay_timeout_seconds
 

@@ -22,7 +22,7 @@ import itertools
 import logging
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable, cast
 import numpy as np
 
@@ -72,6 +72,7 @@ from .const import (
     STANDBY_BAND_FLATNESS_FRACTION,
     STANDBY_BAND_FLATNESS_FLOOR_W,
     ANTI_CREASE_FINALIZE_RATIO,
+    PREROLL_CHAIN_BREAK_SECONDS,
     ANTI_CREASE_CONFIRM_WINDOW_S,
 )
 
@@ -171,6 +172,7 @@ class CycleDetectorConfig:
     # stop_threshold_w and start_threshold_w) before DELAY_WAIT engages.
     # Tuned to filter out brief menu-navigation peaks at the start of a
     # delayed program.
+    curve_preroll_seconds: float = 0.0
     delay_confirm_seconds: float = 60.0
     delay_timeout_seconds: float = 28800.0
 
@@ -318,6 +320,11 @@ class CycleDetector:
 
         # Smoothing buffer
         self._ma_buffer: list[float] = []
+        # Rolling pre-roll buffer (fork): timestamped readings kept so a cycle
+        # that only committed on its second or third probe can still carry the
+        # ramp its aborted probes observed.  Only filled when
+        # `curve_preroll_seconds` is set, so the default costs nothing.
+        self._preroll_buffer: list[tuple[datetime, float]] = []
 
         # Adaptive Sampling Tracker
         self._recent_dts: list[float] = []  # Track last 20 dt values
@@ -779,6 +786,7 @@ class CycleDetector:
         self._last_active_time = None
         self._cycle_max_power = 0.0
         self._ma_buffer = []
+        self._preroll_buffer = []
         self._energy_since_idle_wh = 0.0
         self._time_above_threshold = 0.0
         # Only reset time_below_threshold if not transitioning to ANTI_WRINKLE
@@ -925,6 +933,71 @@ class CycleDetector:
             return min(configured_ratio, 0.90)
         return configured_ratio
 
+    def _resolve_preroll(
+        self, timestamp: datetime
+    ) -> list[tuple[datetime, float]]:
+        """Readings of aborted start probes to carry into the committing cycle.
+
+        A cycle's curve starts at the OFF -> STARTING transition that committed,
+        so an appliance that feels its way in over two or three probes loses the
+        ramp those probes saw - programme selection, door lock, first fill.
+        Returns the buffered readings from the earliest probe inside
+        ``curve_preroll_seconds`` onwards, or an empty list when the feature is
+        off (the default) or nothing qualifies.
+
+        Anchoring on the earliest reading **at or above the start threshold**
+        rather than on the raw window keeps standby out of the cycle: the stored
+        duration is measured from ``_current_cycle_start``, so pulling a flat
+        1 W stretch in would inflate it and every gate derived from it.
+        ``trim_zero_readings`` would drop those samples from the curve at
+        finalize time anyway.
+        """
+        window = float(self._config.curve_preroll_seconds or 0.0)
+        if window <= 0 or not self._preroll_buffer:
+            return []
+
+        cutoff = timestamp - timedelta(seconds=window)
+        threshold = self._config.start_threshold_w
+        candidates = [
+            r for r in self._preroll_buffer if cutoff <= r[0] < timestamp
+        ]
+        if not candidates:
+            return []
+
+        # Walk back from the committing reading and stop at the first quiet
+        # stretch wider than PREROLL_CHAIN_BREAK_SECONDS, so only one continuous
+        # approach is carried.  Without this an isolated blip inside the window -
+        # a dryer's crease-guard tumble minutes before the next load - would
+        # anchor the cycle and back-date it into unrelated activity.
+        chain: list[tuple[datetime, float]] = []
+        last_high_ts = timestamp
+        for reading in reversed(candidates):
+            reading_ts, reading_power = reading
+            if reading_power >= threshold:
+                last_high_ts = reading_ts
+            elif (
+                last_high_ts - reading_ts
+            ).total_seconds() > PREROLL_CHAIN_BREAK_SECONDS:
+                break
+            chain.append(reading)
+        chain.reverse()
+
+        anchor = next(
+            (i for i, (_, p) in enumerate(chain) if p >= threshold), None
+        )
+        if anchor is None:
+            return []
+
+        carried = chain[anchor:]
+        if carried:
+            self._logger.debug(
+                "Curve pre-roll: carrying %d reading(s) over %.0fs from an "
+                "aborted start probe into this cycle.",
+                len(carried),
+                (timestamp - carried[0][0]).total_seconds(),
+            )
+        return carried
+
     def process_reading(self, power: float, timestamp: datetime) -> None:
         """Process a new power reading using robust dt-aware logic."""
 
@@ -1041,6 +1114,20 @@ class CycleDetector:
         self._time_in_state += dt
 
         self._last_power = power
+
+        # Feed the pre-roll buffer and drop everything older than the window.
+        # Readings arrive here already throttled, so this holds exactly what the
+        # stored curve would have held had the probe committed.
+        preroll_window = float(self._config.curve_preroll_seconds or 0.0)
+        if preroll_window > 0:
+            self._preroll_buffer.append((timestamp, power))
+            cutoff = timestamp - timedelta(seconds=preroll_window)
+            if self._preroll_buffer[0][0] < cutoff:
+                self._preroll_buffer = [
+                    r for r in self._preroll_buffer if r[0] >= cutoff
+                ]
+        elif self._preroll_buffer:
+            self._preroll_buffer = []
 
         anti_wrinkle_active = (
             self._config.anti_wrinkle_enabled
@@ -1214,12 +1301,19 @@ class CycleDetector:
                 # Transition to STARTING
                 self._preserve_delay_band_on_off = self._delay_band_start is not None
                 self._transition_to(STATE_STARTING, timestamp)
-                self._current_cycle_start = timestamp
-                self._power_readings = [(timestamp, power)]
+                preroll = self._resolve_preroll(timestamp)
+                if preroll:
+                    self._current_cycle_start = preroll[0][0]
+                    self._power_readings = [*preroll, (timestamp, power)]
+                else:
+                    self._current_cycle_start = timestamp
+                    self._power_readings = [(timestamp, power)]
                 self._energy_since_idle_wh = (
                     power * (credited_dt / 3600.0) if credited_dt > 0 else 0.0
                 )
-                self._cycle_max_power = power
+                self._cycle_max_power = max(
+                    power, max((p for _, p in preroll), default=0.0)
+                )
             # NOTE: terminal-state expiry (Finished/Interrupted/Force-Stopped -> Off)
             # is owned solely by the manager (WashDataManager._handle_state_expiry),
             # which has a wall-clock timer that also fires when a change-only power
@@ -2588,6 +2682,11 @@ class CycleDetector:
             "termination_reason": termination_reason,
             "power_data": [[round(t.timestamp() - start_ts, 1), p] for t, p in final_readings],
         }
+
+        # Drop the pre-roll buffer: everything in it belongs to the cycle that
+        # just ended (its pump-out, its tumble tail), and carrying that into the
+        # next start would back-date the new cycle into the old one.
+        self._preroll_buffer = []
 
         self._logger.info("Cycle Finished: %s, %.1f min", status, duration / 60)
         self._on_cycle_end(cycle_data)
