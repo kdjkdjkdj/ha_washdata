@@ -956,7 +956,13 @@ class CycleDetector:
                 self._lockout_high_seconds += dt
                 if self._lockout_high_seconds < STOP_LOCKOUT_RELEASE_SECONDS:
                     # Still within the spin-down window - ignore reading.
+                    # Record the level anyway (#403): the lockout hides this
+                    # sample from the state machine, but it is still a real
+                    # observation.  Without it the release reading would judge
+                    # its interval against a pre-stop sample up to a full
+                    # lockout window old.
                     self._last_process_time = timestamp
+                    self._last_power = power
                     return
                 self._ignore_power_until_idle = False
                 self._lockout_high_seconds = 0.0
@@ -991,8 +997,21 @@ class CycleDetector:
 
         is_high = power >= threshold
 
+        # Last observation carried forward (#403): ``dt`` is the interval since
+        # the PREVIOUS sample, so it belongs to the level the appliance actually
+        # sat at during it - not to the value that arrives now.  Crediting a
+        # low->high step at the new power books the whole idle gap of a
+        # change-only (send-on-delta) sensor as high-power time and energy, so a
+        # single blip satisfies both start gates before any sustained load has
+        # been observed.  Densely sampled devices are unaffected: there the
+        # previous sample is already at or above the threshold and the interval
+        # keeps its full credit.  Same principle the DELAY_WAIT start path and
+        # the #306 paused-STARTING anchor already state below.
+        prev_high = self._last_power is not None and self._last_power >= threshold
+        credited_dt = dt if prev_high else 0.0
+
         if is_high:
-            self._time_above_threshold += dt
+            self._time_above_threshold += credited_dt
             self._time_below_threshold = 0.0
             self._time_below_threshold_gapfree = 0.0
             # Energy integration (trapezoidal approx for this single step)
@@ -1001,7 +1020,7 @@ class CycleDetector:
             # Simplified: just P * dt for short steps is fine,
             # or call integrate_wh on buffer if needed.
             # Let's use simple rect/trapz here for running sum
-            step_wh = power * (dt / 3600.0)
+            step_wh = power * (credited_dt / 3600.0)
             self._energy_since_idle_wh += step_wh
             self._last_active_time = timestamp
         else:
@@ -1082,7 +1101,11 @@ class CycleDetector:
                         self._energy_since_idle_wh = max(0.0, avg_power * (interval_s / 3600.0))
                     else:
                         self._power_readings = [(timestamp, power)]
-                        self._energy_since_idle_wh = power * (dt / 3600.0) if dt > 0 else 0.0
+                        self._energy_since_idle_wh = (
+                            power * (credited_dt / 3600.0)
+                            if credited_dt > 0
+                            else 0.0
+                        )
 
                     self._cycle_max_power = max(candidate_peak, power)
             elif self._state != STATE_ANTI_WRINKLE:
@@ -1193,7 +1216,9 @@ class CycleDetector:
                 self._transition_to(STATE_STARTING, timestamp)
                 self._current_cycle_start = timestamp
                 self._power_readings = [(timestamp, power)]
-                self._energy_since_idle_wh = power * (dt / 3600.0) if dt > 0 else 0.0
+                self._energy_since_idle_wh = (
+                    power * (credited_dt / 3600.0) if credited_dt > 0 else 0.0
+                )
                 self._cycle_max_power = power
             # NOTE: terminal-state expiry (Finished/Interrupted/Force-Stopped -> Off)
             # is owned solely by the manager (WashDataManager._handle_state_expiry),
