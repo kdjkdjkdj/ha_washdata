@@ -118,6 +118,7 @@ from .const import (
     DEFAULT_SMART_TERMINATION_DURATION_RATIO,
     DEFAULT_SMART_TERMINATION_DURATION_RATIO_BY_DEVICE,
     CONF_DELAY_START_DETECT_ENABLED,
+    CONF_ANTI_CREASE_FINALIZE_RATIO,
     CONF_CURVE_PREROLL_SECONDS,
     CONF_DELAY_CONFIRM_SECONDS,
     CONF_DELAY_TIMEOUT_HOURS,
@@ -162,6 +163,7 @@ from .const import (
     DEFAULT_ANTI_WRINKLE_EXIT_POWER,
     DEFAULT_ANTI_WRINKLE_IDLE_TIMEOUT,
     DEFAULT_DELAY_START_DETECT_ENABLED,
+    DEFAULT_ANTI_CREASE_FINALIZE_RATIO,
     DEFAULT_CURVE_PREROLL_SECONDS,
     DEFAULT_DELAY_CONFIRM_SECONDS,
     DEFAULT_DELAY_TIMEOUT_HOURS,
@@ -849,6 +851,12 @@ class WashDataManager:
             delay_detect_enabled=bool(
                 config_entry.options.get(
                     CONF_DELAY_START_DETECT_ENABLED, DEFAULT_DELAY_START_DETECT_ENABLED
+                )
+            ),
+            anti_crease_finalize_ratio=float(
+                config_entry.options.get(
+                    CONF_ANTI_CREASE_FINALIZE_RATIO,
+                    DEFAULT_ANTI_CREASE_FINALIZE_RATIO,
                 )
             ),
             curve_preroll_seconds=float(
@@ -2268,6 +2276,11 @@ class WashDataManager:
                 CONF_DELAY_START_DETECT_ENABLED, DEFAULT_DELAY_START_DETECT_ENABLED
             )
         )
+        new_anti_crease_ratio = float(
+            config_entry.options.get(
+                CONF_ANTI_CREASE_FINALIZE_RATIO, DEFAULT_ANTI_CREASE_FINALIZE_RATIO
+            )
+        )
         new_curve_preroll_seconds = float(
             config_entry.options.get(
                 CONF_CURVE_PREROLL_SECONDS, DEFAULT_CURVE_PREROLL_SECONDS
@@ -2309,6 +2322,7 @@ class WashDataManager:
         self.detector.config.dishwasher_end_spike_quiet_release = new_dishwasher_end_spike_quiet_release
         self.detector.config.smart_termination_duration_ratio = new_smart_termination_duration_ratio
         self.detector.config.delay_detect_enabled = new_delay_detect_enabled
+        self.detector.config.anti_crease_finalize_ratio = new_anti_crease_ratio
         self.detector.config.curve_preroll_seconds = new_curve_preroll_seconds
         self.detector.config.delay_confirm_seconds = new_delay_confirm_seconds
         self.detector.config.delay_timeout_seconds = new_delay_timeout_seconds

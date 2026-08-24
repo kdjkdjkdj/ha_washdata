@@ -172,6 +172,7 @@ class CycleDetectorConfig:
     # stop_threshold_w and start_threshold_w) before DELAY_WAIT engages.
     # Tuned to filter out brief menu-navigation peaks at the start of a
     # delayed program.
+    anti_crease_finalize_ratio: float = ANTI_CREASE_FINALIZE_RATIO
     curve_preroll_seconds: float = 0.0
     delay_confirm_seconds: float = 60.0
     delay_timeout_seconds: float = 28800.0
@@ -2281,7 +2282,9 @@ class CycleDetector:
         if start is None:
             return False
         current_duration = (timestamp - start).total_seconds()
-        if current_duration < self._expected_duration * ANTI_CREASE_FINALIZE_RATIO:
+        if current_duration < self._expected_duration * float(
+            self._config.anti_crease_finalize_ratio
+        ):
             return False
         # #364: "past expected" only means "past the wash" when expected belongs to
         # the RIGHT profile. A whole washer wash phase sits below

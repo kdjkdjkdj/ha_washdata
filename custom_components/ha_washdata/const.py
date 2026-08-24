@@ -139,6 +139,7 @@ CONF_ANTI_WRINKLE_IDLE_TIMEOUT = "anti_wrinkle_idle_timeout"  # Seconds below ex
 CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE = "dishwasher_end_spike_quiet_release"  # Dishwasher: sustained-quiet seconds after expected duration that release the end-of-cycle drain wait early (#379)
 CONF_SMART_TERMINATION_DURATION_RATIO = "smart_termination_duration_ratio"  # Fraction of the matched profile's expected (mean) duration that Smart Termination requires before it may fire (#393)
 CONF_DELAY_START_DETECT_ENABLED = "delay_start_detect_enabled"  # Enable delayed-start detection
+CONF_ANTI_CREASE_FINALIZE_RATIO = "anti_crease_finalize_ratio"  # Fraction of the expected duration the anti-crease finalize waits for
 CONF_CURVE_PREROLL_SECONDS = "curve_preroll_seconds"  # Seconds of pre-start readings carried into the stored curve (0 = off)
 CONF_DELAY_CONFIRM_SECONDS = "delay_confirm_seconds"  # Seconds power must stay in standby band before DELAY_WAIT engages
 CONF_DELAY_TIMEOUT_HOURS = "delay_timeout_hours"  # Safety timeout (hours) while waiting to start
@@ -763,6 +764,21 @@ STANDBY_BAND_FLATNESS_FLOOR_W = 2.0   # absolute flatness floor for low-peak dev
 # wait) and self-correcting (a new wash's heating burst leaves the regime and
 # re-arms matching).
 ANTI_CREASE_FINALIZE_RATIO = 0.98      # elapsed must reach 98% of expected duration
+# Per-appliance override of the ratio above (fork).  The constant is a fixed 0.98
+# and NOT the option #393 made configurable - that one gates Smart Termination,
+# this one gates the anti-crease finalize.  On a load-dependent dryer the two
+# behave very differently: measured over both dryers, 40% (KD, ratio 0.78-1.24)
+# and 46% (Tiny, 0.61-1.88) of runs never reach 0.98 of their own profile
+# average, so the finalize path built for exactly that tail can never engage and
+# the cycle falls through to the timeout instead.
+#
+# Default keeps the constant, so nothing moves until a device is given its own
+# value.  Lowering it does not open the gate on its own: a matched profile,
+# confidence above `profile_match_threshold`, no ambiguity, a peak above
+# `anti_wrinkle_max_power` and the #364 trailing-power plausibility check all
+# still have to pass.
+DEFAULT_ANTI_CREASE_FINALIZE_RATIO = ANTI_CREASE_FINALIZE_RATIO
+
 ANTI_CREASE_CONFIRM_WINDOW_S = 180.0   # recent window that must hold no reading > max_power
 
 # Device Type Defaults
