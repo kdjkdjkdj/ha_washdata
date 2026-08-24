@@ -32,6 +32,7 @@ from custom_components.ha_washdata.cycle_detector import (
 )
 from custom_components.ha_washdata.const import (
     DEFAULT_CURVE_PREROLL_SECONDS,
+    DEFAULT_CURVE_PREROLL_THRESHOLD_W,
     DEVICE_TYPE_DISHWASHER,
     STATE_OFF,
     STATE_STARTING,
@@ -159,3 +160,66 @@ def test_a_continuous_approach_survives_the_chain_break():
     _feed(detector, [(0, 1.4), (20, 13.0), (80, 6.8), (140, 5.7), (200, 84.0)])
 
     assert detector.current_cycle_start == dt(20)
+
+
+# --- separate anchor level -------------------------------------------------
+#
+# "Is this a real run" and "from here on I want the approach in the curve" are
+# different questions. A dryer shows why: start_threshold_w sits at 150 W while
+# the drum's run-up measures 98-111 W - one reading below it.
+
+DRYER_RUNUP = [
+    (0, 1.0),
+    (60, 7.0),
+    (120, 111.0),   # drum starts - below the 150 W start threshold
+    (180, 356.0),   # heating in, cycle commits here
+    (240, 397.0),
+]
+
+
+def _dryerish(**overrides):
+    return _make_detector(
+        start_threshold_w=150.0,
+        stop_threshold_w=12.0,
+        start_energy_threshold=0.5,
+        start_duration_threshold=56.0,
+        **overrides,
+    )
+
+
+def test_anchor_level_defaults_to_the_start_threshold():
+    assert DEFAULT_CURVE_PREROLL_THRESHOLD_W == 0.0
+
+    detector = _dryerish(curve_preroll_seconds=300.0)
+    _feed(detector, DRYER_RUNUP)
+
+    # 111 W never reaches the start threshold, so there is nothing to anchor on
+    assert detector.current_cycle_start == dt(180)
+
+
+def test_a_lower_anchor_level_captures_the_run_up():
+    detector = _dryerish(curve_preroll_seconds=300.0, curve_preroll_threshold_w=20.0)
+    _feed(detector, DRYER_RUNUP)
+
+    assert detector.current_cycle_start == dt(120)
+    assert detector._power_readings[0] == (dt(120), 111.0)
+
+
+def test_the_anchor_level_is_floored_at_the_stop_threshold():
+    """A level inside standby would back-date the start into idle time."""
+    detector = _dryerish(curve_preroll_seconds=300.0, curve_preroll_threshold_w=1.0)
+    _feed(detector, DRYER_RUNUP)
+
+    # floored to stop_threshold_w (12 W): the 7 W reading cannot anchor,
+    # the 111 W one can
+    assert detector.current_cycle_start == dt(120)
+
+
+def test_the_chain_break_uses_the_same_level():
+    """A run-up reading counts as activity, so it does not read as a quiet gap."""
+    detector = _dryerish(curve_preroll_seconds=300.0, curve_preroll_threshold_w=20.0)
+    _feed(detector, [(0, 1.0), (60, 111.0), (150, 98.0), (240, 356.0)])
+
+    # 90 s between the two run-up readings, but both are above the anchor level,
+    # so the chain holds and the earliest of them anchors the cycle
+    assert detector.current_cycle_start == dt(60)

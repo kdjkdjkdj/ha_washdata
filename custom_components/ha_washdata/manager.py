@@ -120,6 +120,7 @@ from .const import (
     CONF_DELAY_START_DETECT_ENABLED,
     CONF_ANTI_CREASE_FINALIZE_RATIO,
     CONF_CURVE_PREROLL_SECONDS,
+    CONF_CURVE_PREROLL_THRESHOLD_W,
     CONF_DELAY_CONFIRM_SECONDS,
     CONF_DELAY_TIMEOUT_HOURS,
     CONF_PUMP_STUCK_DURATION,
@@ -165,6 +166,7 @@ from .const import (
     DEFAULT_DELAY_START_DETECT_ENABLED,
     DEFAULT_ANTI_CREASE_FINALIZE_RATIO,
     DEFAULT_CURVE_PREROLL_SECONDS,
+    DEFAULT_CURVE_PREROLL_THRESHOLD_W,
     DEFAULT_DELAY_CONFIRM_SECONDS,
     DEFAULT_DELAY_TIMEOUT_HOURS,
     DEFAULT_PROFILE_MATCH_MAX_DURATION_RATIO,
@@ -862,6 +864,11 @@ class WashDataManager:
             curve_preroll_seconds=float(
                 config_entry.options.get(
                     CONF_CURVE_PREROLL_SECONDS, DEFAULT_CURVE_PREROLL_SECONDS
+                )
+            ),
+            curve_preroll_threshold_w=float(
+                config_entry.options.get(
+                    CONF_CURVE_PREROLL_THRESHOLD_W, DEFAULT_CURVE_PREROLL_THRESHOLD_W
                 )
             ),
             delay_confirm_seconds=float(
@@ -2286,6 +2293,11 @@ class WashDataManager:
                 CONF_CURVE_PREROLL_SECONDS, DEFAULT_CURVE_PREROLL_SECONDS
             )
         )
+        new_curve_preroll_threshold = float(
+            config_entry.options.get(
+                CONF_CURVE_PREROLL_THRESHOLD_W, DEFAULT_CURVE_PREROLL_THRESHOLD_W
+            )
+        )
         new_delay_confirm_seconds = float(
             config_entry.options.get(
                 CONF_DELAY_CONFIRM_SECONDS, DEFAULT_DELAY_CONFIRM_SECONDS
@@ -2324,6 +2336,7 @@ class WashDataManager:
         self.detector.config.delay_detect_enabled = new_delay_detect_enabled
         self.detector.config.anti_crease_finalize_ratio = new_anti_crease_ratio
         self.detector.config.curve_preroll_seconds = new_curve_preroll_seconds
+        self.detector.config.curve_preroll_threshold_w = new_curve_preroll_threshold
         self.detector.config.delay_confirm_seconds = new_delay_confirm_seconds
         self.detector.config.delay_timeout_seconds = new_delay_timeout_seconds
 

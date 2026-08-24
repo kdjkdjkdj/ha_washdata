@@ -174,6 +174,7 @@ class CycleDetectorConfig:
     # delayed program.
     anti_crease_finalize_ratio: float = ANTI_CREASE_FINALIZE_RATIO
     curve_preroll_seconds: float = 0.0
+    curve_preroll_threshold_w: float = 0.0
     delay_confirm_seconds: float = 60.0
     delay_timeout_seconds: float = 28800.0
 
@@ -958,7 +959,18 @@ class CycleDetector:
             return []
 
         cutoff = timestamp - timedelta(seconds=window)
-        threshold = self._config.start_threshold_w
+        # The anchor level is deliberately separate from the level that decides a
+        # cycle has begun: "is this a real run" and "from here on I want the
+        # approach in the curve" are different questions, and on some appliances
+        # the run-up sits a reading below start_threshold_w.  Unset falls back to
+        # it; a value below stop_threshold_w is standby and would back-date the
+        # start into idle time, so that is the floor.
+        threshold = float(self._config.curve_preroll_threshold_w or 0.0)
+        threshold = (
+            max(threshold, float(self._config.stop_threshold_w))
+            if threshold > 0
+            else float(self._config.start_threshold_w)
+        )
         candidates = [
             r for r in self._preroll_buffer if cutoff <= r[0] < timestamp
         ]

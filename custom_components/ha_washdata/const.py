@@ -140,7 +140,8 @@ CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE = "dishwasher_end_spike_quiet_release"  
 CONF_SMART_TERMINATION_DURATION_RATIO = "smart_termination_duration_ratio"  # Fraction of the matched profile's expected (mean) duration that Smart Termination requires before it may fire (#393)
 CONF_DELAY_START_DETECT_ENABLED = "delay_start_detect_enabled"  # Enable delayed-start detection
 CONF_ANTI_CREASE_FINALIZE_RATIO = "anti_crease_finalize_ratio"  # Fraction of the expected duration the anti-crease finalize waits for
-CONF_CURVE_PREROLL_SECONDS = "curve_preroll_seconds"  # Seconds of pre-start readings carried into the stored curve (0 = off)
+CONF_CURVE_PREROLL_SECONDS = "curve_preroll_seconds"
+CONF_CURVE_PREROLL_THRESHOLD_W = "curve_preroll_threshold_w"  # Power level the pre-roll anchors on (0 = use start_threshold_w)  # Seconds of pre-start readings carried into the stored curve (0 = off)
 CONF_DELAY_CONFIRM_SECONDS = "delay_confirm_seconds"  # Seconds power must stay in standby band before DELAY_WAIT engages
 CONF_DELAY_TIMEOUT_HOURS = "delay_timeout_hours"  # Safety timeout (hours) while waiting to start
 # Note: the deprecated 0.4.5 drain-spike keys (delay_drain_*) are stripped during
@@ -441,6 +442,21 @@ DEFAULT_DELAY_START_DETECT_ENABLED = False
 # gate derived from it, so existing profiles must not change behaviour unless
 # the setting is deliberately raised.
 DEFAULT_CURVE_PREROLL_SECONDS = 0.0  # s - 0 = keep the current behaviour
+# Level the pre-roll anchors on, independent of the level that decides a cycle
+# has begun.  0 means "use start_threshold_w", which is what the mechanism did
+# when it had only one level - so the default changes nothing.
+#
+# The two questions are genuinely different: `start_threshold_w` answers "is this
+# a real run", the anchor answers "from here on I want the approach in the
+# stored curve".  A dryer shows why: its start threshold sits at 150 W while the
+# drum's run-up is measured at 98-111 W, one reading below the threshold and
+# therefore invisible to an anchor tied to it.
+#
+# Floored at `stop_threshold_w`: below that the readings are standby, and an
+# anchor there would back-date the cycle start into idle time (the samples
+# themselves would be dropped from the curve by trim_zero_readings anyway).
+DEFAULT_CURVE_PREROLL_THRESHOLD_W = 0.0  # W - 0 = fall back to start_threshold_w
+
 # A quiet stretch longer than this ends the pre-roll chain: the carried head has
 # to be one continuous approach, not an isolated blip that happens to sit inside
 # the window.  Measured over 22 cycles on six appliances - inside a genuine ramp
