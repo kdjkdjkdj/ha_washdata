@@ -5,6 +5,38 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.5.4 - 2026-08-24
+
+Fork build on top of upstream `0.5.5`. Pretest for: not yet reported upstream.
+
+### Features
+
+- **The curve pre-roll gets its own anchor level** (Settings - Detection, `curve_preroll_threshold_w`): The pre-roll window anchors at `start_threshold_w`, which is blind to a run-up that stays below it. Measured on the KD dryer: the run-up draws 98-111 W against a 150 W start threshold, so its head was never recovered no matter how wide the window. The level can now be set on its own. Its floor is `stop_threshold_w` - below that the anchor would sit in standby and backdate the cycle start into idle. Raising `start_threshold_w` instead does not work here: the anti-crease sweep (155-282 W) and a genuine start (27.5-181 W) overlap completely, so power cannot separate them; duration can, which is what 0.5.5.1 restored. Default 0 = use `start_threshold_w`, unchanged behaviour. Only has an effect while `curve_preroll_seconds` is non-zero.
+
+## 0.5.5.3 - 2026-08-24
+
+Fork build on top of upstream `0.5.5`. Pretest for: [#399](https://github.com/3dg1luk43/ha_washdata/issues/399) (related - the same 0.98 gate, approached from a different angle).
+
+### Features
+
+- **The anti-crease finalize ratio is per-appliance** (Settings - Detection, `anti_crease_finalize_ratio`): `_anticrease_gate_open` requires `current_duration >= _expected_duration * ANTI_CREASE_FINALIZE_RATIO`, a hardcoded 0.98 in `const.py`. Runs that never reach 0.98 of their own profile expectation lose the finalize path entirely - the very path built for that trailing sweep. Measured across 44 cycles on two instances: 8 of 20 (span 0.78-1.24) and 11 of 24 (0.61-1.88) never get there. Note this is a *different* gate from the Smart-Termination duration ratio made configurable in [#393](https://github.com/3dg1luk43/ha_washdata/issues/393), which is often mistaken for it. Default 0.98, unchanged. Lowering it opens nothing on its own: a matched profile, confidence above `profile_match_threshold`, no ambiguity, a peak above `anti_wrinkle_max_power` and the [#364](https://github.com/3dg1luk43/ha_washdata/issues/364) trailing-sweep plausibility test all still apply.
+
+## 0.5.5.2 - 2026-08-24
+
+Fork build on top of upstream `0.5.5`. Pretest for: not yet reported upstream.
+
+### Features
+
+- **Curve pre-roll: carry the head of a cycle over an aborted start probe** (Settings - Detection, `curve_preroll_seconds`): `_power_readings` is reset on every OFF -> STARTING transition, so an aborted probe takes its readings with it and the cycle that follows starts blind. Measured across 22 cycles: 10 lose head this way, both dishwashers on *every* run (4/4 at 195-217 s and 14-17 readings; 2/3 at 39-70 s). What is lost is real activity - the largest gap carried 20 readings between 17 and 35 W. A chain break of 90 s keeps an isolated blip from anchoring the window, and it is load-bearing rather than cosmetic: inside genuine run-ups the longest quiet stretch measured is 6-60 s (both dishwashers 10-21 s), while the stray cases sat behind 116-120 s. The benefit saturates at 300 s; 600 s recovers nothing further on any appliance measured. Default 0 = off. Note the recovered head counts towards the stored cycle duration, which the duration gate depends on.
+
+## 0.5.5.1 - 2026-08-24
+
+Fork build on top of upstream `0.5.5`. Pretest for: [#403](https://github.com/3dg1luk43/ha_washdata/issues/403).
+
+### Bug Fixes
+
+- **Credit an interval to the power level actually observed during it** ([#403](https://github.com/3dg1luk43/ha_washdata/issues/403)): The accumulator credited `dt` - the time since the *previous* sample - at the *new* sample's power (`cycle_detector.py` L995/L1004, and both STARTING seeds at L1085 and L1196). On a change-only sensor that books an entire idle gap as high-power time, so one blip after a quiet stretch clears both start gates by itself. Measured over 10 days and six appliances: in 63 of 66 starts the duration gate was already satisfied on the *first* reading above threshold, across gaps of 3-60 s. On a dryer with a 60 s cadence and gates of 56 s / 0.5 Wh, a single 155 W reading trips both - 25 aborted false starts of that shape in 10 days, saved only by the sweep being shorter than one sample interval. No damage was ever done by this: replaying all six appliances through patched and unpatched builds produces an identical set of cycles. Takes effect without configuration.
+
 ## 0.5.5 - 2026-08-19
 
 ### Features
