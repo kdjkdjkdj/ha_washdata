@@ -5,6 +5,22 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.5.5 - 2026-08-31
+
+Fork build on top of upstream `0.5.5`. Pretest for: not yet reported upstream (a follow-up to [#364](https://github.com/3dg1luk43/ha_washdata/issues/364)).
+
+### Bug Fixes
+
+- **The prefix guard can be refuted by the blocking candidate's own floor**: The [#364](https://github.com/3dg1luk43/ha_washdata/issues/364) guard blocks Smart Termination on "this trace could be the beginning of a longer programme", and once it fires it has no way back. On an appliance with one short and one long programme that holds *every* short run to the fallback timeout - measured 1.7-3.7 min per run on a washer (`Mix` 82 min against `Baumwolle 60` 165 min) and a dishwasher (`Kurz` 36 min against `Eco` 196 min). But the claim is refutable: a blocking candidate asserts the machine is mid-run inside *it*, and its own envelope says what it draws at that offset. When the live trailing mean sits a multiple below the quietest level that candidate has ever shown there, it cannot be the programme running, and the guard opens. The comparison is against the envelope's **min** curve, and that is load-bearing rather than incidental: measured against the *average* instead, 6 of 20 genuine long washer runs sit under half their own profile average at that offset (down to 0.05x, 1.9 W against 41 W) because the programme takes real soak pauses there - a mean-based test would have cut those cycles in half. Every such pause is already inside the min curve, so undercutting *that* is a statement no genuine run makes. Calibrated on 77 cycles across 4 appliances at two sites (26 short / 51 long): factors 1.5-4.0 all produce zero false openings; 3.0 sits mid-plateau, opens 7 of the 26 short runs, and leaves the tightest genuine long run a factor 2.95 above the opening threshold. Fail-closed throughout - no min curve, no reading, a thinly-trained candidate or a shorter match tuple all leave the guard exactly as it was. The anti-crease finalize is deliberately untouched: it reads the narrower `is_prefix_ambiguous_full_shape`, where blocking can re-hang a cycle ([#296](https://github.com/3dg1luk43/ha_washdata/issues/296)). Takes effect without configuration.
+
+### Performance
+
+- **The trailing power window is walked once per reading, not once per guard**: The power-plausibility check and the new prefix refutation average the same window at the same timestamp, and the throttled diagnostic line reports it - three scans of the same readings where one suffices, which is precisely what the comment above the call site warns against. The mean is now taken once on the ENDING path and handed to both, and only when a guard can actually use it: each returns on its own reference level before touching the window, so pre-computing unconditionally would *add* a scan to the common mid-wash case where neither is armed.
+
+### Diagnostics
+
+- **Every Smart-Termination blocker is reported, not just the foremost one**: The gate is a conjunction, so several conditions routinely block at once - a run past its duration gate can be held by the prefix guard as well, and a measured washer cycle was held by both while the log named only the first. The cost of that lands on the next run: fixing the reported blocker reveals the second only when the appliance runs again, and these run twice a week, so a two-deep block takes two weeks to become visible. The reasons are now collected in gate order and joined in the line (`duration_not_reached+prefix_ambiguous`), and the throttle compares the whole set, so a guard opening mid-run is visible even while another still holds. The line also carries `prefix_floor`, the level that would release a prefix block, so a run held by the guard can be told from one where the blocker was simply not refutable.
+
 ## 0.5.5.4 - 2026-08-24
 
 Fork build on top of upstream `0.5.5`. Pretest for: not yet reported upstream.
