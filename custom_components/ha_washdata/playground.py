@@ -957,7 +957,9 @@ class _DetailSim:
         # Elements 7-9 (#364): without them the prefix-landscape and power-plausibility
         # guards were never exercised in a simulation, so the exact failure the
         # Playground exists to reproduce was invisible here.
-        full_shape_hit, prefix_fit_hit = _match_prefix_ambiguity(candidates, raw_expected)
+        full_shape_hit, prefix_fit_hit, prefix_blocker = _match_prefix_ambiguity(
+            candidates, raw_expected
+        )
         # Guard the store call like iter_evidence_cycles above: on an older store or a
         # partial test double without profile_tail_power the AttributeError would
         # bubble through _try_profile_match, which drops the match at debug - so EVERY

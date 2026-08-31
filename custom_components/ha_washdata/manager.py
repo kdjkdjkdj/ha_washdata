@@ -1489,15 +1489,19 @@ class WashDataManager:
 
             # Push updates to detector
             self.detector.set_verified_pause(verified_pause)
-            # Element 8 is the narrow #288-only prefix verdict and element 9 the
-            # matched profile's own tail power level, both for the #364 guards. The
+            # Element 8 is the narrow #288-only prefix verdict, element 9 the
+            # matched profile's own tail power level, element 10 the floor the
+            # BLOCKING candidate shows at this offset (which refutes it). The
             # detector tolerates shorter tuples, so other callers stay valid.
             self.detector.update_match(
                 (profile_name, confidence, matched_duration, phase_name,
                  result.is_confident_mismatch, result.is_ambiguous,
                  result.is_prefix_ambiguous,
                  result.is_prefix_ambiguous_full_shape,
-                 self.profile_store.profile_tail_power(profile_name) if profile_name else None)
+                 self.profile_store.profile_tail_power(profile_name) if profile_name else None,
+                 self.profile_store.profile_prefix_floor(
+                     result.prefix_blocker, current_duration
+                 ) if result.prefix_blocker else None)
             )
 
             # --- LOGGING (Unified) ---

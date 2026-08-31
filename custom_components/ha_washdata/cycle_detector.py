@@ -53,6 +53,7 @@ from .const import (
     DISHWASHER_END_SPIKE_QUIET_RELEASE_SECONDS,
     DISHWASHER_END_SPIKE_WAIT_SECONDS,
     DISHWASHER_SMART_TERMINATION_DEBOUNCE_SECONDS,
+    SMART_TERM_PREFIX_REFUTE_FACTOR,
     SMART_TERM_TAIL_MAX_RATIO,
     SMART_TERM_TAIL_MIN_POINTS,
     SMART_TERM_TAIL_WINDOW_FRAC,
@@ -348,7 +349,15 @@ class CycleDetector:
         # Mean power the matched profile draws over the last few % of its own run
         # (profile_store.profile_tail_power). None = no opinion, guard stays inert.
         self._matched_tail_power: float | None = None
-        self._last_smart_term_block_reason: str | None = None  # #346 diagnostic throttle
+        # Lowest power the candidate that set the prefix verdict has ever shown at
+        # this offset (profile_store.profile_prefix_floor). Sitting a multiple
+        # below it refutes that candidate and releases the guard. None = no
+        # opinion, guard behaves exactly as before.
+        self._prefix_floor_w: float | None = None
+        # #346 diagnostic throttle. Holds the full reason TUPLE, so the line
+        # re-fires when any one reason appears or clears - not only when the
+        # foremost one changes.
+        self._last_smart_term_block_reasons: tuple[str, ...] | None = None
 
         # Anti-wrinkle tracking (dryers only)
         self._anti_wrinkle_candidate_start: datetime | None = None
@@ -486,6 +495,9 @@ class CycleDetector:
     # unmatched / no-expected-duration path.
     _SANITIZE_MAX_EXPECTED_DURATION = 6 * 3600.0  # 6 hours
     _SANITIZE_INVALID_SENTINEL = 0.0  # 0 == "no valid expected_duration"
+    # "caller did not pre-compute the trailing mean" - distinct from None, which is
+    # the mean's own "too few samples to judge" verdict.
+    _TRAILING_MEAN_UNSET: Any = object()
 
     def _sanitize_expected_duration(
         self, raw: Any, *, source: str = "update_match"
@@ -590,7 +602,9 @@ class CycleDetector:
             energy += (p0 + p1) / 2.0 * (t1 - t0).total_seconds()
         return energy / span
 
-    def _smart_term_power_plausible(self, timestamp: datetime) -> bool:
+    def _smart_term_power_plausible(
+        self, timestamp: datetime, mean_power: Any = _TRAILING_MEAN_UNSET
+    ) -> bool:
         """Whether the appliance looks like it is actually FINISHING (#364).
 
         Both Smart-Termination paths fire at ``elapsed >= 0.98 * expected`` and
@@ -608,14 +622,51 @@ class CycleDetector:
         Shorten-only and fail-open: any missing input returns True, leaving
         behaviour identical to before the guard.  A False can only ever *block* an
         early finish - the power-based fallback timeout still ends the cycle.
+
+        ``mean_power`` lets the caller pass a trailing mean it has already taken
+        for the same timestamp and window, so the ENDING path walks the reading
+        window once rather than once per guard.  Omit it and the value is taken
+        here, unchanged for every other caller.
         """
         tail_power = self._matched_tail_power
         if tail_power is None or tail_power <= 0:
             return True
-        mean_power = self._trailing_mean_power(timestamp, self._tail_window_s())
+        if mean_power is self._TRAILING_MEAN_UNSET:
+            mean_power = self._trailing_mean_power(timestamp, self._tail_window_s())
         if mean_power is None:
             return True
         return mean_power <= tail_power * SMART_TERM_TAIL_MAX_RATIO
+
+    def _prefix_refuted(
+        self, timestamp: datetime, mean_power: Any = _TRAILING_MEAN_UNSET
+    ) -> bool:
+        """Whether the blocking candidate is disproved by what the machine draws.
+
+        The prefix guard blocks on "this could be the beginning of a longer
+        programme". That candidate asserts we are mid-run inside it, so its own
+        envelope says what it draws here - and against its MINIMUM curve, which
+        already contains every soak and pause it takes. Sitting a multiple below
+        that floor is a level no genuine run of that programme has ever shown, so
+        the candidate cannot be what is running and the guard may open.
+
+        Mirrors ``_smart_term_power_plausible`` in shape but not in direction: that
+        one blocks on too MUCH power (a shorter look-alike mid-wash), this one
+        releases on too LITTLE (a longer look-alike that is demonstrably not
+        running). Fail-closed: any missing input returns False, leaving the guard
+        blocking exactly as before.
+
+        ``mean_power`` follows the same pre-computation contract as
+        ``_smart_term_power_plausible``: pass a trailing mean already taken for
+        this timestamp and window, or omit it and it is taken here.
+        """
+        floor = self._prefix_floor_w
+        if floor is None or floor <= 0:
+            return False
+        if mean_power is self._TRAILING_MEAN_UNSET:
+            mean_power = self._trailing_mean_power(timestamp, self._tail_window_s())
+        if mean_power is None:
+            return False
+        return mean_power * SMART_TERM_PREFIX_REFUTE_FACTOR < floor
 
     def _tail_window_s(self) -> float:
         """Trailing window that covers the same FRACTION of the run as the profile
@@ -741,6 +792,11 @@ class CycleDetector:
             self._matched_tail_power = (
                 self._sanitize_tail_power(result_seq[8]) if len(result_seq) >= 9 else None
             )
+            # Element 10: same contract as element 9 - a shorter tuple must CLEAR
+            # it, or the refutation would judge against a previous match's blocker.
+            self._prefix_floor_w = (
+                self._sanitize_tail_power(result_seq[9]) if len(result_seq) >= 10 else None
+            )
         else:
             # Assume MatchResult object or similar (future proofing)
             # But for now wrapper returns tuple
@@ -753,6 +809,7 @@ class CycleDetector:
             self._match_prefix_ambiguous = False
             self._match_prefix_ambiguous_full_shape = False
             self._matched_tail_power = None
+            self._prefix_floor_w = None
 
         elif match_name:
             # If sanitization rejected the expected_duration, treat the match
@@ -806,12 +863,13 @@ class CycleDetector:
         self._match_ambiguous = False
         self._match_prefix_ambiguous = False
         self._match_prefix_ambiguous_full_shape = False
+        self._prefix_floor_w = None
         self._matched_tail_power = None
         # Per-cycle diagnostic throttle (#346): the "Smart Termination not applied"
         # line only logs when the reason CHANGES. Carrying the previous cycle's
         # reason across a reset swallows the new cycle's very first diagnostic
         # whenever it happens to be blocked for the same reason.
-        self._last_smart_term_block_reason = None
+        self._last_smart_term_block_reasons = None
         self._ignore_power_until_idle = False  # Reset lockout
         self._lockout_high_seconds = 0.0
         # Clear the verified-pause flag so it can't leak into the next cycle (B6):
@@ -866,6 +924,46 @@ class CycleDetector:
         return self._expected_duration
 
     @staticmethod
+    def _smart_term_block_reasons(
+        current_duration: float,
+        expected: float,
+        smart_ratio: float,
+        is_confident: bool,
+        ambiguous: bool,
+        prefix_ambiguous: bool,
+        power_plausible: bool = True,
+        prefix_refuted: bool = False,
+    ) -> tuple[str, ...]:
+        """EVERY reason the Smart-Termination fast end-path did not fire, in gate
+        order, or an empty tuple when the gate would pass.
+
+        The gate is a conjunction, so several conditions routinely block at once -
+        but reporting only the foremost one hides the rest until it is fixed, and
+        each round of that costs a real cycle on an appliance that runs twice a
+        week. Collecting them all turns "why is this cycle still open?" into one
+        observation instead of a sequence of them.
+
+        The order still mirrors the gate, so the first entry is the reason the old
+        single-valued diagnostic reported. Empty also when no expected duration is
+        known yet - there is nothing meaningful to say then. Pure and
+        side-effect-free (#346, "still_active" from #364).
+        """
+        if expected <= 0:
+            return ()
+        reasons: list[str] = []
+        if current_duration < expected * smart_ratio:
+            reasons.append("duration_not_reached")
+        if not is_confident:
+            reasons.append("low_confidence")
+        if ambiguous:
+            reasons.append("match_ambiguous")
+        if prefix_ambiguous and not prefix_refuted:
+            reasons.append("prefix_ambiguous")
+        if not power_plausible:
+            reasons.append("still_active")
+        return tuple(reasons)
+
+    @staticmethod
     def _smart_term_block_reason(
         current_duration: float,
         expected: float,
@@ -874,28 +972,24 @@ class CycleDetector:
         ambiguous: bool,
         prefix_ambiguous: bool,
         power_plausible: bool = True,
+        prefix_refuted: bool = False,
     ) -> str | None:
-        """Why the Smart-Termination fast end-path did NOT fire, for diagnostics.
+        """The foremost blocking reason, or None when the gate would pass.
 
-        Returns None when the gate would pass, or when no expected duration is known
-        yet (nothing meaningful to report). Mirrors the gate's conditions in order so
-        the first blocking reason is surfaced. Pure and side-effect-free; the
-        detector logs the result (throttled to reason changes) - no behaviour
-        change (#346, extended with "still_active" for #364).
+        Kept as the single-valued view over ``_smart_term_block_reasons`` for
+        callers that want just the headline.
         """
-        if expected <= 0:
-            return None
-        if current_duration < expected * smart_ratio:
-            return "duration_not_reached"
-        if not is_confident:
-            return "low_confidence"
-        if ambiguous:
-            return "match_ambiguous"
-        if prefix_ambiguous:
-            return "prefix_ambiguous"
-        if not power_plausible:
-            return "still_active"
-        return None
+        reasons = CycleDetector._smart_term_block_reasons(
+            current_duration,
+            expected,
+            smart_ratio,
+            is_confident,
+            ambiguous,
+            prefix_ambiguous,
+            power_plausible,
+            prefix_refuted,
+        )
+        return reasons[0] if reasons else None
 
     @staticmethod
     def _resolve_smart_ratio(
@@ -1713,10 +1807,27 @@ class CycleDetector:
                         getattr(self, "_last_match_confidence", 0.0)
                         >= self._config.match_confidence_threshold
                     )
-                    # Compute the #364 power-plausibility once per reading and reuse it
-                    # for the diagnostic reason and the gate below - the helper walks the
-                    # trailing window, so calling it two/three times per reading is waste.
-                    _power_plausible = self._smart_term_power_plausible(timestamp)
+                    # Both guards mean the SAME trailing window at the same
+                    # timestamp, and the diagnostic line reports it - so take it
+                    # once here and hand it to each, rather than walking the
+                    # readings two or three times per reading.
+                    #
+                    # Only when a guard can actually use it, though: each one
+                    # returns on its own reference level before touching the
+                    # window, so pre-computing unconditionally would ADD work to
+                    # the common case where neither is armed.
+                    _trailing_mean = (
+                        self._trailing_mean_power(timestamp, self._tail_window_s())
+                        if (
+                            (self._matched_tail_power or 0) > 0
+                            or (self._prefix_floor_w or 0) > 0
+                        )
+                        else None
+                    )
+                    _power_plausible = self._smart_term_power_plausible(
+                        timestamp, _trailing_mean
+                    )
+                    _prefix_refuted = self._prefix_refuted(timestamp, _trailing_mean)
 
                     # Gate the predictive end on match certainty.
                     # _match_ambiguous: top-1 vs top-2 score gap is too small to
@@ -1734,7 +1845,7 @@ class CycleDetector:
                     # Surface why the fast end-path is (not) firing, throttled to
                     # reason changes so a stuck cycle's cause is visible in the log
                     # without spamming every reading. Pure diagnostic (#346).
-                    _block_reason = self._smart_term_block_reason(
+                    _block_reasons = self._smart_term_block_reasons(
                         current_duration,
                         self._expected_duration,
                         smart_ratio,
@@ -1742,28 +1853,50 @@ class CycleDetector:
                         self._match_ambiguous,
                         self._match_prefix_ambiguous,
                         _power_plausible,
+                        _prefix_refuted,
                     )
-                    if _block_reason != self._last_smart_term_block_reason:
-                        self._last_smart_term_block_reason = _block_reason
-                        if _block_reason is not None:
+                    # Throttled on the whole tuple: the line re-fires as soon as
+                    # ANY reason appears or clears, so a guard opening mid-run is
+                    # visible even while another one still holds.
+                    if _block_reasons != self._last_smart_term_block_reasons:
+                        self._last_smart_term_block_reasons = _block_reasons
+                        if _block_reasons:
                             self._logger.debug(
                                 "Smart Termination not applied (%s): dur=%.0fs/%.0fs conf=%.2f "
-                                "ambiguous=%s prefix_ambiguous=%s trailing_power=%s profile_tail=%s",
-                                _block_reason,
+                                "ambiguous=%s prefix_ambiguous=%s trailing_power=%s profile_tail=%s "
+                                "prefix_floor=%s",
+                                "+".join(_block_reasons),
                                 current_duration,
                                 self._expected_duration * smart_ratio,
                                 getattr(self, "_last_match_confidence", 0.0),
                                 self._match_ambiguous,
                                 self._match_prefix_ambiguous,
-                                self._trailing_mean_power(timestamp, self._tail_window_s()),
+                                # Throttled to reason changes, so recomputing on the
+                                # rare path where no guard was armed costs nothing and
+                                # keeps the live power in the line either way.
+                                _trailing_mean
+                                if _trailing_mean is not None
+                                else self._trailing_mean_power(
+                                    timestamp, self._tail_window_s()
+                                ),
                                 self._matched_tail_power,
+                                # The level that would release a prefix block, so a
+                                # run held by the guard can be told from one where
+                                # the blocker was simply not refutable.
+                                self._prefix_floor_w,
                             )
 
                     if (
                         current_duration >= (self._expected_duration * smart_ratio)
                         and is_confident_match
                         and not self._match_ambiguous
-                        and not self._match_prefix_ambiguous
+                        # The prefix verdict is releasable: the candidate that set
+                        # it can be refuted by the power level it would itself
+                        # require here. Without that, one short-plus-long profile
+                        # pair holds every short run to the fallback timeout.
+                        and (
+                            not self._match_prefix_ambiguous or _prefix_refuted
+                        )
                         # #364: the clock says "done", but if we are still drawing
                         # several times what this profile draws at its own end, the
                         # match is a shorter look-alike and we are mid-wash. Block;
@@ -2789,6 +2922,7 @@ class CycleDetector:
             "end_spike_duration": self._end_spike_duration,
             "match_ambiguous": self._match_ambiguous,
             "match_prefix_ambiguous": self._match_prefix_ambiguous,
+            "prefix_floor_w": self._prefix_floor_w,
             "match_prefix_ambiguous_full_shape": self._match_prefix_ambiguous_full_shape,
             "matched_tail_power": self._matched_tail_power,
             "ml_defer_start_duration": self._ml_defer_start_duration,
@@ -2853,6 +2987,9 @@ class CycleDetector:
             self._end_spike_duration = float(snapshot.get("end_spike_duration", 0.0))
             self._match_ambiguous = snapshot.get("match_ambiguous", False)
             self._match_prefix_ambiguous = snapshot.get("match_prefix_ambiguous", False)
+            self._prefix_floor_w = self._sanitize_tail_power(
+                snapshot.get("prefix_floor_w")
+            )
             # A pre-#364 snapshot has no narrow flag: fall back to the widened
             # value so a restart cannot loosen the anti-crease gate.
             self._match_prefix_ambiguous_full_shape = snapshot.get(

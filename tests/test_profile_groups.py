@@ -266,7 +266,7 @@ def test_prefix_ambiguous_false_when_runner_up_shape_too_low():
         _cand("Quick", 2760, 0.70, 0.61),
         _cand("Wool", 5400, 0.15, 0.12),   # different shape -> shape_score below threshold
     ]
-    assert _match_prefix_ambiguity(candidates, 2760.0) == (False, False)
+    assert _match_prefix_ambiguity(candidates, 2760.0)[:2] == (False, False)
 
 
 def test_prefix_ambiguous_false_when_runner_up_not_much_longer():

@@ -578,6 +578,28 @@ SMART_TERM_PREFIX_MAX_CANDIDATES = 3   # cap prefix scorings per match (cost con
 SMART_TERM_PREFIX_MIN_POINTS = 12      # mirrors the matcher's >=12-sample floor
 SMART_TERM_PREFIX_MIN_COVERAGE = 0.90  # template span must cover >=90% of its duration
 
+# Power refutation for the prefix guard.  The guard above blocks on "the trace
+# could be the beginning of a longer programme", and once it fires it has no way
+# back: on an appliance with one short and one long profile it holds every short
+# run to the fallback timeout (measured 1.7-3.7 min per run).  But the claim it
+# makes is refutable.  A blocking candidate asserts we are mid-run inside IT, and
+# its own envelope says what it draws there - so when the live trailing mean sits
+# a multiple BELOW the quietest level that candidate has ever shown at this
+# offset, it is not the programme running, and the guard may open.
+#
+# The min curve is the load-bearing choice.  Comparing against the AVERAGE is
+# measurably unsafe: on a washer with real soak pauses, 6 of 20 genuine long runs
+# sit under half their own profile average at that offset (down to 0.05x), and a
+# mean-based test would have cut them in half.  Every such pause is already inside
+# the min curve, so undercutting THAT is a statement no genuine run makes.
+#
+# Measured on 77 cycles across 4 appliances at two sites (26 short / 51 long):
+# factors 1.5-4.0 all give zero false openings; 3.0 sits mid-plateau and still
+# opens 7 of 26 short runs, with the tightest genuine long run a factor 2.95
+# above the opening threshold.  Fail-closed: no min curve, no reading, or a
+# thinly-trained candidate leaves the guard exactly as it was.
+SMART_TERM_PREFIX_REFUTE_FACTOR = 3.0  # open only this far below the candidate floor
+
 # (b) Power plausibility (fixes 1, the untrained case, which no candidate-pool guard
 # can reach).  Both Smart-Termination paths key on `elapsed >= 0.98 * expected` and
 # neither checks whether the appliance is still WORKING, so a mis-matched shorter
