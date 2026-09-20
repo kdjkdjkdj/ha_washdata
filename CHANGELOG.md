@@ -5,6 +5,26 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.6.1 - 2026-09-20
+
+Fork build on top of upstream `0.5.6`. Rebuilt from scratch on the 0.5.6 release: everything the fork carried on top of `0.5.5` that upstream has since implemented itself is gone, including the CI and release-preflight work, which 0.5.6 now ships byte-identically. Two themes remain, both still unreported upstream.
+
+### Features
+
+- **The curve pre-roll gets its own anchor level** (`curve_preroll_threshold_w`): The pre-roll anchors at `start_threshold_w`, which is blind to a run-up that stays below it. Measured on the KD dryer: the run-up draws 98-111 W against a 150 W start threshold, so its head was never recovered no matter how wide the window. The level can now be set on its own, floored at `stop_threshold_w` - below that the anchor would sit in standby and backdate the cycle start into idle time. Default 0 = use `start_threshold_w`, unchanged behaviour, and only has an effect while `curve_preroll_seconds` is non-zero. Rebuilt against upstream's own [#430](https://github.com/3dg1luk43/ha_washdata/issues/430) implementation, where the chain break is a pure time-gap walk over every buffered reading - so unlike the 0.5.5.4 build, only the anchor itself needs the separate level.
+
+### Bug Fixes
+
+- **The prefix guard can be refuted by the blocking candidate's own floor**: The [#364](https://github.com/3dg1luk43/ha_washdata/issues/364) guard blocks Smart Termination on "this trace could be the beginning of a longer programme", and once it fires it has no way back. On an appliance with one short and one long programme that holds *every* short run to the fallback timeout - measured 1.7-3.7 min per run on a washer and a dishwasher. But the claim is refutable: a blocking candidate asserts the machine is mid-run inside *it*, and its own envelope says what it draws at that offset. When the live trailing mean sits a multiple below the quietest level that candidate has ever shown there, it cannot be the programme running, and the guard opens. The comparison is against the envelope's **min** curve, and that is load-bearing: measured against the *average* instead, 6 of 20 genuine long washer runs sit under half their own profile average at that offset (down to 0.05x) because the programme takes real soak pauses there. Fail-closed throughout. The anti-crease finalize is deliberately untouched ([#296](https://github.com/3dg1luk43/ha_washdata/issues/296)). The calibration figures (77 cycles, factor 3.0, 7 of 26 short runs opened at zero false openings) were taken against `0.5.5` and still need re-measuring against 0.5.6, whose Stage 4 ([#400](https://github.com/3dg1luk43/ha_washdata/issues/400)) moves the guard's trigger.
+
+### Performance
+
+- **The trailing power window is walked once per reading, not once per guard**: The power-plausibility check and the prefix refutation average the same window at the same timestamp, and the throttled diagnostic line reports it. The mean is now taken once on the ENDING path and handed to both - and only when a guard can actually use it, since each returns on its own reference level before touching the window.
+
+### Diagnostics
+
+- **Every Smart-Termination blocker is reported, not just the foremost one**: The gate is a conjunction, so several conditions routinely block at once. The reasons are now collected in gate order and joined in the line (`duration_not_reached+prefix_ambiguous`), and the throttle compares the whole set, so a guard opening mid-run is visible even while another still holds. The line also carries `prefix_floor`, the level that would release a prefix block.
+
 ## 0.5.6 - Live on Matrix/Element - 2026-08-22
 
 ### TL;DR
