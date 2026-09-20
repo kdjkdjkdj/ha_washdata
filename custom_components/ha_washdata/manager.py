@@ -117,8 +117,10 @@ from .const import (
     CONF_SMART_TERMINATION_DURATION_RATIO,
     CONF_ANTI_CREASE_FINALIZE_RATIO,
     CONF_CURVE_PREROLL_SECONDS,
+    CONF_CURVE_PREROLL_THRESHOLD_W,
     DEFAULT_ANTI_CREASE_FINALIZE_RATIO,
     DEFAULT_CURVE_PREROLL_SECONDS,
+    DEFAULT_CURVE_PREROLL_THRESHOLD_W,
     DEFAULT_SMART_TERMINATION_DURATION_RATIO,
     DEFAULT_SMART_TERMINATION_DURATION_RATIO_BY_DEVICE,
     CONF_DELAY_START_DETECT_ENABLED,
@@ -991,6 +993,11 @@ class WashDataManager:
             curve_preroll_seconds=float(
                 config_entry.options.get(
                     CONF_CURVE_PREROLL_SECONDS, DEFAULT_CURVE_PREROLL_SECONDS
+                )
+            ),
+            curve_preroll_threshold_w=float(
+                config_entry.options.get(
+                    CONF_CURVE_PREROLL_THRESHOLD_W, DEFAULT_CURVE_PREROLL_THRESHOLD_W
                 )
             ),
             delay_detect_enabled=bool(
@@ -2586,6 +2593,11 @@ class WashDataManager:
                 CONF_CURVE_PREROLL_SECONDS, DEFAULT_CURVE_PREROLL_SECONDS
             )
         )
+        new_curve_preroll_threshold = float(
+            config_entry.options.get(
+                CONF_CURVE_PREROLL_THRESHOLD_W, DEFAULT_CURVE_PREROLL_THRESHOLD_W
+            )
+        )
         new_delay_detect_enabled = bool(
             config_entry.options.get(
                 CONF_DELAY_START_DETECT_ENABLED, DEFAULT_DELAY_START_DETECT_ENABLED
@@ -2628,6 +2640,7 @@ class WashDataManager:
         self.detector.config.smart_termination_duration_ratio = new_smart_termination_duration_ratio
         self.detector.config.anti_crease_finalize_ratio = new_anti_crease_finalize_ratio
         self.detector.config.curve_preroll_seconds = new_curve_preroll_seconds
+        self.detector.config.curve_preroll_threshold_w = new_curve_preroll_threshold
         self.detector.config.delay_detect_enabled = new_delay_detect_enabled
         self.detector.config.delay_confirm_seconds = new_delay_confirm_seconds
         self.detector.config.delay_timeout_seconds = new_delay_timeout_seconds
