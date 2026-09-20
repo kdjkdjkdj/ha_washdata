@@ -94,6 +94,7 @@ from .const import (
     ANTI_CREASE_FINALIZE_RATIO_MIN,
     ANTI_CREASE_FINALIZE_RATIO_MAX,
     DEFAULT_CURVE_PREROLL_SECONDS,
+    DEFAULT_CURVE_PREROLL_THRESHOLD_W,
     CURVE_PREROLL_MAX_SECONDS,
     PREROLL_CHAIN_BREAK_SECONDS,
     ANTI_CREASE_CONFIRM_WINDOW_S,
@@ -449,6 +450,9 @@ class CycleDetectorConfig:
     # committed cycle's curve (#430). 0 disables the whole path, which is the
     # default and keeps the stored-duration convention unchanged.
     curve_preroll_seconds: float = DEFAULT_CURVE_PREROLL_SECONDS
+    # Level the pre-roll anchors on. 0 falls back to start_threshold_w, which is
+    # what the mechanism does with a single level, so the default is a no-op.
+    curve_preroll_threshold_w: float = DEFAULT_CURVE_PREROLL_THRESHOLD_W
     delay_detect_enabled: bool = False
     # Sustained seconds power must stay in the standby band (between
     # stop_threshold_w and start_threshold_w) before DELAY_WAIT engages.
@@ -4071,7 +4075,18 @@ class CycleDetector:
             return []
         chain.reverse()  # chronological
 
-        threshold = float(self._config.start_threshold_w)
+        # The anchor level is deliberately separate from the level that decides
+        # a cycle has begun: "is this a real run" and "from here on I want the
+        # approach in the curve" are different questions, and on some appliances
+        # the run-up sits a reading below start_threshold_w. Unset falls back to
+        # it; a value below stop_threshold_w is standby and would back-date the
+        # start into idle time, so that is the floor.
+        configured = float(self._config.curve_preroll_threshold_w or 0.0)
+        threshold = (
+            max(configured, float(self._config.stop_threshold_w))
+            if configured > 0
+            else float(self._config.start_threshold_w)
+        )
         anchor = next(
             (i for i, (_ts, p) in enumerate(chain) if p >= threshold), None
         )
