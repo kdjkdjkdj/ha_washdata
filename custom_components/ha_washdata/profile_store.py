@@ -67,6 +67,8 @@ from .const import (
     SMART_TERM_PREFIX_MIN_RATIO,
     SMART_TERM_PREFIX_MIN_SHAPE,
     SMART_TERM_TAIL_WINDOW_FRAC,
+    SMART_TERM_TAIL_WINDOW_MIN_S,
+    SMART_TERM_TAIL_WINDOW_S,
     STORAGE_KEY,
     STORAGE_VERSION,
     DEFAULT_MAX_PAST_CYCLES,
@@ -374,6 +376,9 @@ class MatchResult:
     # NOT for the anti-crease finalize, where blocking can re-hang a cycle the way
     # #296 described. That consumer reads this narrower flag instead.
     is_prefix_ambiguous_full_shape: bool = False
+    # Name of the candidate that set the prefix verdict, so the detector can ask
+    # that profile what it draws at the current offset and refute it.
+    prefix_blocker: str | None = None
     # Stage 5 only (None for every non-group match): the blended pipeline score
     # the SELECTED member earned on its own curve. `confidence` deliberately stays
     # the group's score - the best-scoring sibling's - because that is what the
@@ -966,8 +971,8 @@ def _ambiguity_from_candidates(candidates: list[dict]) -> tuple[float, bool]:
 
 def _match_prefix_ambiguity(
     candidates: list[dict], best_duration: float
-) -> tuple[bool, bool]:
-    """``(full_shape_hit, prefix_fit_hit)`` for the prefix-landscape guard.
+) -> tuple[bool, bool, str | None]:
+    """``(full_shape_hit, prefix_fit_hit, blocker_name)`` for the prefix-landscape guard.
 
     Both terms answer the same question - "might this trace be a *prefix* of a
     longer programme rather than a complete short one?" - by two different routes,
@@ -995,7 +1000,7 @@ def _match_prefix_ambiguity(
     never fire *less* often than the #288 predicate did.
     """
     if best_duration <= 0 or len(candidates) < 2:
-        return False, False
+        return False, False, None
     # Compare against the winner's SHAPE score, not its blended final score: prefix_score
     # is a shape-scale value (Stage-2 + Stage-3, no Stage-4 duration/energy agreement), so
     # measuring the margin against the blended score mixed scales and made 0.15 too strict.
@@ -1006,12 +1011,15 @@ def _match_prefix_ambiguity(
     )
     full_shape_hit = False
     prefix_fit_hit = False
+    blocker: str | None = None
     for cand in candidates[1:]:
         prof_dur = float(cand.get("profile_duration") or 0)
         if prof_dur > best_duration * SMART_TERM_LANDSCAPE_RATIO and float(
             cand.get("shape_score", cand.get("score", 0))
         ) >= SMART_TERM_LANDSCAPE_MIN_SHAPE:
             full_shape_hit = True
+            if blocker is None:
+                blocker = cand.get("name")
         prefix_score = cand.get("prefix_score")
         if (
             prefix_score is not None
@@ -1020,9 +1028,12 @@ def _match_prefix_ambiguity(
             and float(prefix_score) >= best_score + SMART_TERM_PREFIX_MARGIN
         ):
             prefix_fit_hit = True
+            # The prefix term is the more specific verdict, so its candidate wins
+            # the naming race: that is the profile whose floor we can refute.
+            blocker = cand.get("name")
         if full_shape_hit and prefix_fit_hit:
             break
-    return full_shape_hit, prefix_fit_hit
+    return full_shape_hit, prefix_fit_hit, blocker
 
 
 # ── Selective export/import taxonomy ────────────────────────────────────────────
@@ -5607,6 +5618,76 @@ class ProfileStore:
         except Exception:  # noqa: BLE001
             return None
 
+    def profile_prefix_floor(
+        self,
+        profile_name: str,
+        at_seconds: float,
+        window_s: float | None = None,
+    ) -> float | None:
+        """Lowest power (W) this profile's envelope has ever shown around
+        ``at_seconds``, or None when it has no usable min curve. Never raises.
+
+        The reference level for refuting the prefix guard. A candidate that blocks
+        Smart Termination asserts we are mid-run inside it, and this answers what
+        it draws at that offset in its QUIETEST observed run. The min curve rather
+        than the average, because every genuine soak or pause the programme takes
+        is already inside it - so a live reading far under it is a statement no
+        genuine run of that programme makes.
+
+        Windowed both ways, since the live side is itself a mean over a trailing
+        window and the phase alignment between run and template is not exact. The
+        default window mirrors the detector's trailing window; at the gate the
+        elapsed time and the expected duration differ by under 2%, so deriving it
+        from ``at_seconds`` keeps both sides on the same scale without threading
+        the detector's state through the store.
+
+        None (no opinion) whenever the profile has no envelope, no min curve, or a
+        min curve that is flat zero there - all of which leave the guard untouched.
+        """
+        try:
+            envelope = self.get_envelope(profile_name)
+            if not envelope:
+                return None
+            raw_min = envelope.get("min") or []
+            if not raw_min:
+                return None
+            if isinstance(raw_min[0], (list, tuple)) and len(raw_min[0]) >= 2:
+                pts = cast(list[list[Any] | tuple[Any, ...]], raw_min)
+                times = [float(p[0]) for p in pts]
+                powers = [float(p[1]) for p in pts]
+            else:
+                powers = [float(p) for p in cast(list[float | int], raw_min)]
+                grid = envelope.get("time_grid")
+                if isinstance(grid, list) and len(grid) == len(powers):
+                    times = [float(t) for t in cast(list[Any], grid)]
+                else:
+                    target = float(envelope.get("target_duration", 0.0) or 0.0)
+                    if target <= 0:
+                        return None
+                    times = cast(
+                        list[float], np.linspace(0, target, len(powers)).tolist()
+                    )
+            if window_s is None:
+                window_s = min(
+                    SMART_TERM_TAIL_WINDOW_S,
+                    max(
+                        SMART_TERM_TAIL_WINDOW_MIN_S,
+                        float(at_seconds) * SMART_TERM_TAIL_WINDOW_FRAC,
+                    ),
+                )
+            window = max(float(window_s), 0.0)
+            vals = [
+                p
+                for t, p in zip(times, powers)
+                if at_seconds - window <= t <= at_seconds + window
+            ]
+            if not vals:
+                return None
+            floor = float(min(vals))
+            return floor if math.isfinite(floor) and floor > 0 else None
+        except Exception:  # noqa: BLE001
+            return None
+
     def reference_curve(
         self, profile_name: str, n: int = REFERENCE_PROFILE_CURVE_POINTS
     ) -> JSONDict | None:
@@ -6579,7 +6660,7 @@ class ProfileStore:
         # current trace may be a prefix of that longer program, not a complete
         # short cycle. Signal cycle_detector to block Smart Termination; the
         # power-based fallback timeout will decide instead.
-        full_shape_hit, prefix_fit_hit = _match_prefix_ambiguity(
+        full_shape_hit, prefix_fit_hit, prefix_blocker = _match_prefix_ambiguity(
             candidates, best_duration or 0.0
         )
         is_prefix_ambiguous = full_shape_hit or prefix_fit_hit
@@ -6595,6 +6676,7 @@ class ProfileStore:
             ranking=candidates[:5],  # populate ranking (consumed for training snapshots)
             is_prefix_ambiguous=is_prefix_ambiguous,
             is_prefix_ambiguous_full_shape=full_shape_hit,
+            prefix_blocker=prefix_blocker,
             member_confidence=member_confidence,
         )
 

@@ -1692,8 +1692,9 @@ class WashDataManager:
             # Element 8 is the narrow #288-only prefix verdict and element 9 the
             # matched profile's own tail power level, both for the #364 guards;
             # element 10 is its terminal high-power block for the #399 anti-crease
-            # guard. The detector tolerates shorter tuples, so other callers stay
-            # valid.
+            # guard, and element 11 the floor the BLOCKING candidate shows at this
+            # offset (which refutes it). The detector tolerates shorter tuples, so
+            # other callers stay valid.
             terminal_high = None
             if profile_name and self.detector.config.anti_wrinkle_enabled:
                 terminal_high = self.profile_store.profile_terminal_high_block(
@@ -1705,7 +1706,10 @@ class WashDataManager:
                  result.is_prefix_ambiguous,
                  result.is_prefix_ambiguous_full_shape,
                  self.profile_store.profile_tail_power(profile_name) if profile_name else None,
-                 terminal_high)
+                 terminal_high,
+                 self.profile_store.profile_prefix_floor(
+                     result.prefix_blocker, current_duration
+                 ) if result.prefix_blocker else None)
             )
 
             # --- LOGGING (Unified) ---
