@@ -83,11 +83,11 @@ def test_reset_clears_the_block_reason_throttle():
     from custom_components.ha_washdata.cycle_detector import CycleDetectorConfig
 
     det = CycleDetector(CycleDetectorConfig(min_power=5.0, off_delay=120), Mock(), Mock())
-    det._last_smart_term_block_reason = "duration_not_reached"
+    det._last_smart_term_block_reasons = ("duration_not_reached",)
 
     det.reset()
 
-    assert det._last_smart_term_block_reason is None
+    assert det._last_smart_term_block_reasons is None
 
 
 def test_anti_wrinkle_reset_also_clears_the_block_reason_throttle():
@@ -102,8 +102,82 @@ def test_anti_wrinkle_reset_also_clears_the_block_reason_throttle():
     from custom_components.ha_washdata.cycle_detector import CycleDetectorConfig
 
     det = CycleDetector(CycleDetectorConfig(min_power=5.0, off_delay=120), Mock(), Mock())
-    det._last_smart_term_block_reason = "low_confidence"
+    det._last_smart_term_block_reasons = ("low_confidence",)
 
     det.reset(STATE_ANTI_WRINKLE)
 
-    assert det._last_smart_term_block_reason is None
+    assert det._last_smart_term_block_reasons is None
+
+
+# ── every reason at once, not just the foremost one ────────────────────────────
+#
+# The gate is a conjunction, so several conditions routinely block together. The
+# single-valued diagnostic stops at the first, which means fixing it only reveals
+# the next one on the FOLLOWING run - and on an appliance that runs twice a week
+# each of those rounds costs a real cycle.
+
+
+def test_reasons_reports_every_blocking_condition_together():
+    """The measured Tiny washer case: the duration gate and the prefix guard held
+    at the same time, but only the former was ever named."""
+    assert CycleDetector._smart_term_block_reasons(
+        current_duration=1823.0, expected=2838.0, smart_ratio=0.85,
+        is_confident=True, ambiguous=False, prefix_ambiguous=True,
+    ) == ("duration_not_reached", "prefix_ambiguous")
+
+
+def test_reasons_keeps_gate_order_so_the_first_entry_is_the_old_headline():
+    reasons = CycleDetector._smart_term_block_reasons(
+        current_duration=100.0, expected=1000.0, smart_ratio=0.98,
+        is_confident=False, ambiguous=True, prefix_ambiguous=True,
+        power_plausible=False,
+    )
+    assert reasons == (
+        "duration_not_reached",
+        "low_confidence",
+        "match_ambiguous",
+        "prefix_ambiguous",
+        "still_active",
+    )
+    assert CycleDetector._smart_term_block_reason(
+        current_duration=100.0, expected=1000.0, smart_ratio=0.98,
+        is_confident=False, ambiguous=True, prefix_ambiguous=True,
+        power_plausible=False,
+    ) == reasons[0]
+
+
+def test_reasons_is_empty_when_the_gate_would_pass():
+    assert CycleDetector._smart_term_block_reasons(
+        current_duration=1000.0, expected=1000.0, smart_ratio=0.98,
+        is_confident=True, ambiguous=False, prefix_ambiguous=False,
+    ) == ()
+
+
+def test_reasons_is_empty_without_an_expected_duration():
+    assert CycleDetector._smart_term_block_reasons(
+        current_duration=500.0, expected=0.0, smart_ratio=0.98,
+        is_confident=True, ambiguous=False, prefix_ambiguous=False,
+    ) == ()
+
+
+def test_a_refuted_prefix_guard_drops_out_while_the_others_remain():
+    """The point of collecting them: one guard opening is visible even though
+    another still holds, without waiting for another cycle to find out."""
+    common = dict(
+        current_duration=100.0, expected=1000.0, smart_ratio=0.98,
+        is_confident=True, ambiguous=False, prefix_ambiguous=True,
+    )
+    assert CycleDetector._smart_term_block_reasons(**common) == (
+        "duration_not_reached",
+        "prefix_ambiguous",
+    )
+    assert CycleDetector._smart_term_block_reasons(**common, prefix_refuted=True) == (
+        "duration_not_reached",
+    )
+
+
+def test_the_single_valued_view_still_returns_none_when_nothing_blocks():
+    assert CycleDetector._smart_term_block_reason(
+        current_duration=1000.0, expected=1000.0, smart_ratio=0.98,
+        is_confident=True, ambiguous=False, prefix_ambiguous=False,
+    ) is None

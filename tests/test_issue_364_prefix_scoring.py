@@ -183,7 +183,7 @@ def test_prefix_term_catches_what_the_full_shape_term_misses():
         {"name": "Baumwolle", "profile_duration": 6100.0, "score": 0.30,
          "shape_score": 0.20, "prefix_score": 0.72},
     ]
-    assert _match_prefix_ambiguity(cands, 4731.0) == (False, True)
+    assert _match_prefix_ambiguity(cands, 4731.0)[:2] == (False, True)
 
 
 def test_prefix_term_ignores_a_marginal_improvement():
@@ -196,7 +196,7 @@ def test_prefix_term_ignores_a_marginal_improvement():
          "shape_score": 0.30, "prefix_score": 0.95},
     ]
     # 0.95 < 0.90 + 0.15 -> not enough of an improvement to doubt the winner.
-    assert _match_prefix_ambiguity(cands, 5372.0) == (False, False)
+    assert _match_prefix_ambiguity(cands, 5372.0)[:2] == (False, False)
 
 
 def test_prefix_margin_is_measured_against_the_winner_shape_score():
@@ -211,7 +211,7 @@ def test_prefix_margin_is_measured_against_the_winner_shape_score():
          "shape_score": 0.20, "prefix_score": 0.80},
     ]
     # 0.80 >= 0.55 + 0.15 (blended) but 0.80 < 0.70 + 0.15 (shape) -> no doubt.
-    assert _match_prefix_ambiguity(cands, 2760.0) == (False, False)
+    assert _match_prefix_ambiguity(cands, 2760.0)[:2] == (False, False)
 
 
 def test_prefix_margin_falls_back_to_score_without_a_shape_score():
@@ -221,7 +221,7 @@ def test_prefix_margin_falls_back_to_score_without_a_shape_score():
         {"name": "Normal", "profile_duration": 5280.0, "score": 0.30, "prefix_score": 0.80},
     ]
     # 0.80 >= 0.55 + 0.15 -> fires on the blended-score fallback.
-    assert _match_prefix_ambiguity(cands, 2760.0) == (False, True)
+    assert _match_prefix_ambiguity(cands, 2760.0)[:2] == (False, True)
 
 
 def test_missing_prefix_score_degrades_to_the_legacy_verdict():
@@ -231,7 +231,7 @@ def test_missing_prefix_score_degrades_to_the_legacy_verdict():
         {"name": "Quick", "profile_duration": 2760.0, "score": 0.61, "shape_score": 0.70},
         {"name": "Normal", "profile_duration": 5280.0, "score": 0.44, "shape_score": 0.70},
     ]
-    assert _match_prefix_ambiguity(cands, 2760.0) == (True, False)
+    assert _match_prefix_ambiguity(cands, 2760.0)[:2] == (True, False)
 
 
 def test_prefix_term_respects_the_duration_noise_guard():
@@ -242,15 +242,15 @@ def test_prefix_term_respects_the_duration_noise_guard():
         {"name": "B", "profile_duration": 5200.0, "score": 0.30,
          "shape_score": 0.30, "prefix_score": 0.99},
     ]
-    assert _match_prefix_ambiguity(cands, 5000.0) == (False, False)
+    assert _match_prefix_ambiguity(cands, 5000.0)[:2] == (False, False)
 
 
 def test_single_candidate_and_zero_duration_are_safe():
-    assert _match_prefix_ambiguity([{"name": "A", "profile_duration": 5000.0, "score": 0.8}], 5000.0) == (False, False)
-    assert _match_prefix_ambiguity([], 5000.0) == (False, False)
+    assert _match_prefix_ambiguity([{"name": "A", "profile_duration": 5000.0, "score": 0.8}], 5000.0)[:2] == (False, False)
+    assert _match_prefix_ambiguity([], 5000.0)[:2] == (False, False)
     assert _match_prefix_ambiguity(
         [{"name": "A", "score": 0.8}, {"name": "B", "score": 0.5}], 0.0
-    ) == (False, False)
+    )[:2] == (False, False)
 
 
 # ── grid cap (#388) ─────────────────────────────────────────────────────────

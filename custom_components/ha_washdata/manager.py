@@ -1833,7 +1833,12 @@ class WashDataManager:
                  # From the FULL candidate population, carried on the result -
                  # `result.candidates` is `candidates[:5]` and would hide the
                  # very programme `_match_prefix_ambiguous` is warning about.
-                 float(getattr(result, "longest_candidate_duration_s", 0.0) or 0.0))
+                 float(getattr(result, "longest_candidate_duration_s", 0.0) or 0.0),
+                 # Element 13 (fork): the floor the BLOCKING candidate shows at this
+                 # offset, which refutes the prefix guard.
+                 self.profile_store.profile_prefix_floor(
+                     result.prefix_blocker, current_duration
+                 ) if result.prefix_blocker else None)
             )
 
             # --- LOGGING (Unified) ---
