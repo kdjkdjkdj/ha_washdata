@@ -48,6 +48,7 @@ from custom_components.ha_washdata.const import (
     CONF_POWER_SENSOR,
     CURVE_PREROLL_MAX_SECONDS,
     DEFAULT_CURVE_PREROLL_SECONDS,
+    DEFAULT_CURVE_PREROLL_THRESHOLD_W,
     DOMAIN,
     PREROLL_CHAIN_BREAK_SECONDS,
     STATE_DELAY_WAIT,
@@ -459,3 +460,83 @@ def test_the_sim_summary_reports_the_window_the_sim_applied() -> None:
     assert summary["curve_preroll_seconds"] == CURVE_PREROLL_MAX_SECONDS
     # 0.0 is the case that silently disarms the gate; the gate reads 0.5.
     assert summary["anti_crease_finalize_ratio"] == ANTI_CREASE_FINALIZE_RATIO_MIN
+
+
+# ---------------------------------------------------------------------------
+# A separate anchor level
+#
+# "Is this a real run" and "from here on I want the approach in the curve" are
+# different questions. A dryer shows why: its start_threshold_w sits at 150 W
+# while the drum's run-up measures 98-111 W - one reading below it, and so
+# invisible to an anchor tied to the start threshold.
+# ---------------------------------------------------------------------------
+
+# t=120 is the drum spinning up below the start threshold; the heating comes in
+# at t=180 and that is where the cycle can commit.
+DRYER_RUNUP = [(0, 1.0), (60, 7.0), (120, 111.0)] + [
+    (t, 356.0 if t == 180 else 397.0) for t in range(180, 480, 60)
+]
+
+
+def _dryer(preroll: float, anchor: float = 0.0) -> CycleDetector:
+    cfg = CycleDetectorConfig(
+        min_power=5.0,
+        off_delay=60,
+        completion_min_seconds=600,
+        start_duration_threshold=56.0,
+        start_energy_threshold=0.5,
+        start_threshold_w=150.0,
+        stop_threshold_w=12.0,
+        curve_preroll_seconds=preroll,
+        curve_preroll_threshold_w=anchor,
+    )
+    return CycleDetector(
+        config=cfg, on_state_change=Mock(), on_cycle_end=Mock(), profile_matcher=None
+    )
+
+
+def _feed(det: CycleDetector, readings) -> None:
+    for offset, power in readings:
+        det.process_reading(power, _dt(offset))
+
+
+def test_the_anchor_level_is_off_by_default() -> None:
+    assert DEFAULT_CURVE_PREROLL_THRESHOLD_W == 0.0
+    cfg = CycleDetectorConfig(min_power=5.0, off_delay=60)
+    assert cfg.curve_preroll_threshold_w == 0.0
+
+
+def test_unset_the_anchor_is_the_start_threshold() -> None:
+    """The run-up stays out: 111 W never reaches the 150 W start threshold."""
+    det = _dryer(300.0)
+    _feed(det, DRYER_RUNUP)
+
+    assert det._current_cycle_start == _dt(180)
+
+
+def test_a_lower_anchor_level_captures_the_run_up() -> None:
+    det = _dryer(300.0, anchor=20.0)
+    _feed(det, DRYER_RUNUP)
+
+    assert det._current_cycle_start == _dt(120)
+    assert det._power_readings[0] == (_dt(120), 111.0)
+
+
+def test_the_anchor_level_is_floored_at_the_stop_threshold() -> None:
+    """A level inside standby would back-date the start into idle time."""
+    det = _dryer(300.0, anchor=1.0)
+    _feed(det, DRYER_RUNUP)
+
+    # Floored to stop_threshold_w (12 W), so the 7 W reading cannot anchor and
+    # the 111 W one still can - identical to asking for 12 W outright.
+    assert det._current_cycle_start == _dt(120)
+
+
+def test_the_anchor_takes_the_earliest_run_up_reading() -> None:
+    """Both run-up readings clear the anchor, so the earlier one wins."""
+    det = _dryer(300.0, anchor=20.0)
+    _feed(det, [(0, 1.0), (60, 98.0), (120, 111.0)] + [
+        (t, 356.0 if t == 180 else 397.0) for t in range(180, 480, 60)
+    ])
+
+    assert det._current_cycle_start == _dt(60)
