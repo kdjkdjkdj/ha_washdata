@@ -5,6 +5,26 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.7.1 - 2026-09-28
+
+Fork build on top of upstream `0.5.7`. Same two themes as `0.5.6.1`, both still unreported upstream; carried over unchanged in behaviour.
+
+### Features
+
+- **The curve pre-roll gets its own anchor level** (`curve_preroll_threshold_w`): The pre-roll anchors at `start_threshold_w`, which is blind to a run-up that stays below it. Measured on the KD dryer: the run-up draws 98-111 W against a 150 W start threshold, so its head was never recovered no matter how wide the window. The level can now be set on its own, floored at `stop_threshold_w` - below that the anchor would sit in standby and backdate the cycle start into idle time. Default 0 = use `start_threshold_w`, unchanged behaviour, and only has an effect while `curve_preroll_seconds` is non-zero. Now also listed in the detector-config parity test that 0.5.7 introduced ([#451](https://github.com/3dg1luk43/ha_washdata/issues/451)); the option was already applied on both the startup and the reload path.
+
+### Bug Fixes
+
+- **The prefix guard can be refuted by the blocking candidate's own floor**: The [#364](https://github.com/3dg1luk43/ha_washdata/issues/364) guard blocks Smart Termination on "this trace could be the beginning of a longer programme", and once it fires it has no way back. On an appliance with one short and one long programme that holds *every* short run to the fallback timeout. But the claim is refutable: a blocking candidate asserts the machine is mid-run inside *it*, and its own envelope says what it draws at that offset. When the live trailing mean sits a multiple below the quietest level that candidate has ever shown there, it cannot be the programme running, and the guard opens. Compared against the envelope's **min** curve, fail-closed throughout; the anti-crease finalize is deliberately untouched ([#296](https://github.com/3dg1luk43/ha_washdata/issues/296)). The floor now rides in element 13 of the detector's match tuple, since 0.5.7 uses elements 11 and 12. Scope is unchanged: it opens Smart Termination only - 0.5.7's ENDING fallback gate and dishwasher minimum-cycle floor still read the prefix flag directly. The calibration figures (77 cycles, factor 3.0, 7 of 26 short runs opened at zero false openings) were taken against `0.5.5` and still need re-measuring.
+
+### Performance
+
+- **The trailing power window is walked once per reading, not once per guard**: The power-plausibility check and the prefix refutation share one mean on the ENDING path, taken only when a guard can actually use it.
+
+### Diagnostics
+
+- **Every Smart-Termination blocker is reported, not just the foremost one**: reasons are collected in gate order and joined (`duration_not_reached+prefix_ambiguous`), the throttle compares the whole set, and the line carries `prefix_floor`, the level that would release a prefix block.
+
 ## 0.5.7 - Unreleased
 
 ### TL;DR
