@@ -5,6 +5,14 @@ All notable changes to WashData will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.7.2 - 2026-10-04
+
+Fork build on top of `0.5.7.1`. One behaviour fix; the two `0.5.7.1` themes are unchanged.
+
+### Bug Fixes
+
+- **A dishwasher's drying phase longer than 30 min is no longer cut to 30 min in the stored cycle**: When a dishwasher run is finished before its terminal event shows up in the trace, the stored end is the last activity plus the profile's measured terminal quiet span (register item 297) - capped at `TERMINAL_QUIET_CAP_S` (1800 s). On a machine that dries for 45 min after its last pump-out and only then emits its terminal event, that cap stored every such run ~15 min short (KD, Eco: drying 2680-2690 s in 12 of 12 traced runs; two runs under `0.5.7.1` stored at exactly pump-out + 1800 s, 177.5 and 179.0 min against ~193 min real), and the short runs pull `avg_duration` - and with it the next Smart Termination - earlier. The measured span may now exceed 30 min, up to a hard ceiling of 3600 s, but only when the terminal event it was measured against is brief (<= 120 s) and sits at the end of the cycle (>= 80 %). A long "event" in the middle of the programme means the span is a mid-programme pause - [#424](https://github.com/3dg1luk43/ha_washdata/issues/424)'s Beko measured 611 s against a 5923 s "event" at 58 % - and such a span keeps the 30 min cap, as does any signature missing those fields. Measured signatures: KD Eco event 0 s at 0.998 (span now 2700.6 s), Tiny Eco 16.5 s at 0.835 (1501 s, unchanged), #424 Beko 5923 s at 0.584 (611.5 s, unchanged). The stored end still never passes the moment the cycle was finished. Already-shortened cycles are not lengthened: the banked-tail repair is shorten-only and has already run.
+
 ## 0.5.7.1 - 2026-09-28
 
 Fork build on top of upstream `0.5.7`. Same two themes as `0.5.6.1`, both still unreported upstream; carried over unchanged in behaviour.
