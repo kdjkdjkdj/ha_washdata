@@ -1000,6 +1000,22 @@ STANDBY_BAND_MIN_RATIO = 1.0          # only past the expected duration
 # exists to prevent. 30 min comfortably covers a dishwasher's passive drying
 # phase, measured at a median 11% of the cycle and reaching 43%.
 TERMINAL_QUIET_CAP_S = 1800.0
+# ...but the 43% end of that range is not hypothetical: a dishwasher that dries
+# for 45 min after its last pump-out and only then emits its terminal event
+# (KD, Eco: 2680-2690 s in 12 of 12 traced runs) had every run whose trace ended
+# before that event stored at pump-out + 30 min, ~15 min short - and the short
+# runs pull `avg_duration`, and with it the next Smart Termination, earlier.
+# So a measured span may exceed TERMINAL_QUIET_CAP_S, up to the hard ceiling
+# below, only when the terminal event it was measured against looks like one:
+# brief, and at the very end of the cycle. A long "event" in the middle of the
+# programme means the quiet span is a mid-programme pause (#424: the Beko's
+# 611 s span was measured against a 5923 s "event" at 58% of the cycle), and
+# such a span keeps the 30 min cap. Missing fields fail closed to the cap.
+# Measured: KD Eco event 0 s at 0.998, Tiny Eco 16.5 s at 0.835, #424 Beko
+# 5923 s at 0.584.
+TERMINAL_QUIET_EXTENDED_CAP_S = 3600.0
+TERMINAL_QUIET_EXTENDED_MAX_EVENT_S = 120.0
+TERMINAL_QUIET_EXTENDED_MIN_POSITION = 0.8
 # A measured quiet span is only trusted as a tail allowance when the profile has
 # actually shown it repeatedly (register item 297). Measured over 20 real profiles: the two
 # dishwashers, which genuinely end in a passive drying phase, scored 20/20 and

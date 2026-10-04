@@ -73,7 +73,7 @@ from .const import (
     STANDBY_BAND_FINALIZE_DEVICE_TYPES,
     STANDBY_BAND_MIN_RATIO,
     DEVICE_TYPE_DISHWASHER,
-    TERMINAL_QUIET_CAP_S,
+    TERMINAL_QUIET_EXTENDED_CAP_S,
     STANDBY_BAND_WINDOW_S,
     STANDBY_BAND_MAX_FRACTION,
     STANDBY_BAND_FLATNESS_FRACTION,
@@ -753,7 +753,7 @@ class CycleDetector:
         DISHWASHER ``_keep_tail_cap`` then behaves exactly as it did before this
         element existed. Other device types never reach that branch - they are
         capped at ``_last_active_time`` higher up - so None changes nothing for
-        them either way. Bounded above by ``TERMINAL_QUIET_CAP_S`` so a corrupted
+        them either way. Bounded above by ``TERMINAL_QUIET_EXTENDED_CAP_S`` so a corrupted
         or hand-edited value cannot license an unbounded tail - the one thing
         this field exists to prevent.
         """
@@ -765,7 +765,10 @@ class CycleDetector:
             return None
         if not math.isfinite(value) or value < 0:
             return None
-        return min(value, TERMINAL_QUIET_CAP_S)
+        # The producer (`profile_terminal_quiet_seconds`) already applies the
+        # 30 min cap unless the profile's terminal event is plausible; this is
+        # only the hard ceiling.
+        return min(value, TERMINAL_QUIET_EXTENDED_CAP_S)
 
     @staticmethod
     def _sanitize_longest_candidate(raw: Any) -> float:
@@ -3874,7 +3877,9 @@ class CycleDetector:
                 _pts, _last_off, self._config.stop_threshold_w
             ) >= 0.5 * float(quiet):
                 return last_active
-        return last_active + timedelta(seconds=min(quiet, TERMINAL_QUIET_CAP_S))
+        return last_active + timedelta(
+            seconds=min(quiet, TERMINAL_QUIET_EXTENDED_CAP_S)
+        )
 
     def _finish_cycle(
         self,

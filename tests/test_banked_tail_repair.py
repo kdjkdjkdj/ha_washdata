@@ -39,6 +39,7 @@ from custom_components.ha_washdata.const import (
     STORAGE_KEY,
     STORAGE_VERSION,
     TERMINAL_QUIET_CAP_S,
+    TERMINAL_QUIET_EXTENDED_CAP_S,
 )
 from custom_components.ha_washdata.cycle_detector import (
     CycleDetector,
@@ -125,7 +126,15 @@ def test_an_unmeasured_dishwasher_keeps_the_old_behaviour() -> None:
 
 def test_a_corrupt_quiet_span_cannot_license_an_unbounded_tail() -> None:
     d = _det("dishwasher", quiet=99999.0, spike=False)
-    assert _cap_offset(d) == pytest.approx(3000.0 + TERMINAL_QUIET_CAP_S)
+    assert _cap_offset(d) == pytest.approx(3000.0 + TERMINAL_QUIET_EXTENDED_CAP_S)
+
+
+def test_a_drying_phase_longer_than_30_min_is_kept() -> None:
+    """Fork: KD dishwasher, Eco - 45 min passive drying after the last pump-out
+    (2680-2690 s in 12 of 12 traced runs). Capped at 1800 s, every run whose
+    trace ended before the terminal event was stored ~15 min short."""
+    d = _det("dishwasher", quiet=2700.0, spike=False)
+    assert _cap_offset(d) == pytest.approx(3000.0 + 2700.0)
 
 
 def test_an_unmatched_cycle_is_untouched() -> None:
@@ -183,8 +192,46 @@ def test_a_span_seen_once_is_not_a_measurement() -> None:
 def test_a_consistently_measured_span_is_trusted() -> None:
     """Real corpus: both dishwashers measured their drying phase in 20/20 and
     17/17 cycles."""
-    st = _sig(_Store({}), quiet_before_s=1810.0, seen_in=20, measured=20, consistency=1.0)
+    st = _sig(
+        _Store({}), quiet_before_s=1810.0, seen_in=20, measured=20, consistency=1.0,
+        event_seconds=0.0, position_frac=0.99,
+    )
     assert st.profile_terminal_quiet_seconds("p") == pytest.approx(1810.0)
+
+
+def test_a_plausible_terminal_event_licenses_a_long_drying_phase() -> None:
+    """Fork: KD dishwasher, Eco - signature measured on the real store."""
+    st = _sig(
+        _Store({}), quiet_before_s=2700.6, seen_in=12, measured=17, consistency=0.706,
+        event_seconds=0.0, position_frac=0.998,
+    )
+    assert st.profile_terminal_quiet_seconds("p") == pytest.approx(2700.6)
+
+
+def test_a_mid_programme_event_keeps_the_30_min_cap() -> None:
+    """#424's Beko: the "terminal event" is 98 min of the second programme half
+    at 58% of the cycle, so the quiet before it is a mid-programme pause. A long
+    span measured that way must not bank past 30 min."""
+    st = _sig(
+        _Store({}), quiet_before_s=2700.0, seen_in=17, measured=17, consistency=1.0,
+        event_seconds=5923.0, position_frac=0.584,
+    )
+    assert st.profile_terminal_quiet_seconds("p") == pytest.approx(TERMINAL_QUIET_CAP_S)
+
+
+def test_a_signature_without_event_fields_fails_closed_to_the_cap() -> None:
+    st = _sig(_Store({}), quiet_before_s=2700.0, seen_in=20, measured=20, consistency=1.0)
+    assert st.profile_terminal_quiet_seconds("p") == pytest.approx(TERMINAL_QUIET_CAP_S)
+
+
+def test_even_a_plausible_event_has_a_hard_ceiling() -> None:
+    st = _sig(
+        _Store({}), quiet_before_s=99999.0, seen_in=20, measured=20, consistency=1.0,
+        event_seconds=0.0, position_frac=0.99,
+    )
+    assert st.profile_terminal_quiet_seconds("p") == pytest.approx(
+        TERMINAL_QUIET_EXTENDED_CAP_S
+    )
 
 
 def test_no_event_ever_means_no_opinion() -> None:

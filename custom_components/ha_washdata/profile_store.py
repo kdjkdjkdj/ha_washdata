@@ -50,6 +50,9 @@ from .const import (
     BANKED_TAIL_REPAIR_KEY,
     BANKED_TAIL_REPAIR_MIN_S,
     TERMINAL_QUIET_CAP_S,
+    TERMINAL_QUIET_EXTENDED_CAP_S,
+    TERMINAL_QUIET_EXTENDED_MAX_EVENT_S,
+    TERMINAL_QUIET_EXTENDED_MIN_POSITION,
     TERMINAL_QUIET_MIN_CONSISTENCY,
     TERMINAL_QUIET_MIN_OBSERVATIONS,
     MAINTENANCE_EVENT_TYPES,
@@ -1511,6 +1514,28 @@ def _merge_list_dedup(base: list[Any], incoming: list[Any]) -> None:
                 continue
             seen_sigs.add(sig)
         base.append(item)
+
+
+def _terminal_quiet_cap(sig: dict[str, Any]) -> float:
+    """Ceiling for a profile's measured terminal quiet span (fork, see const.py).
+
+    TERMINAL_QUIET_EXTENDED_CAP_S when the terminal event the span was measured
+    against is brief and sits at the end of the cycle, else TERMINAL_QUIET_CAP_S.
+    Fails closed: a missing or non-numeric field keeps the 30 min cap.
+    """
+    try:
+        event_s = float(sig["event_seconds"])
+        position = float(sig["position_frac"])
+    except (KeyError, TypeError, ValueError):
+        return TERMINAL_QUIET_CAP_S
+    if (
+        math.isfinite(event_s)
+        and math.isfinite(position)
+        and 0.0 <= event_s <= TERMINAL_QUIET_EXTENDED_MAX_EVENT_S
+        and position >= TERMINAL_QUIET_EXTENDED_MIN_POSITION
+    ):
+        return TERMINAL_QUIET_EXTENDED_CAP_S
+    return TERMINAL_QUIET_CAP_S
 
 
 class ProfileStore:
@@ -5916,7 +5941,10 @@ class ProfileStore:
                     quiet = quiet_by_profile[pname]
                     if quiet is None:
                         continue  # no trustworthy measurement -> leave it alone
-                    allowance = min(float(quiet), TERMINAL_QUIET_CAP_S)
+                    # Already capped by the accessor (30 min, or the extended
+                    # ceiling for a plausible terminal event); the ceiling here
+                    # only guards a value that did not come through it.
+                    allowance = min(float(quiet), TERMINAL_QUIET_EXTENDED_CAP_S)
                     # ...unless `last_active` IS the terminal pump-out, in which
                     # case the drying already happened BEFORE it and adding the
                     # allowance on top counts the same quiet twice.
@@ -6134,7 +6162,7 @@ class ProfileStore:
             value = float(quiet)
             if not math.isfinite(value) or value < 0:
                 return _remember(None)
-            return _remember(value)
+            return _remember(min(value, _terminal_quiet_cap(sig)))
         except Exception:  # noqa: BLE001 - a statistic must never break matching
             # Deliberately NOT cached: a failure is not a measurement, and
             # remembering one would pin "no opinion" until the evidence changes.
