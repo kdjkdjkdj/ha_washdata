@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Releases 0.5.4 and earlier are in [CHANGELOG-archive.md](CHANGELOG-archive.md).
 
+## 0.5.8.1 - 2026-10-10
+
+Fork build on top of upstream `0.5.8`. One fork theme left; the other two `0.5.7.2` themes are dropped.
+
+Pretest for: not yet reported upstream
+
+### Features
+
+- **The curve pre-roll gets its own anchor level** (`curve_preroll_threshold_w`): The pre-roll anchors at `start_threshold_w`, which is blind to a run-up that stays below it. Measured on the KD dryer: the run-up draws 98-111 W against a 150 W start threshold, so its head was never recovered no matter how wide the window. The level can now be set on its own, floored at `stop_threshold_w` - below that the anchor would sit in standby and backdate the cycle start into idle time. Default 0 = use `start_threshold_w`, unchanged behaviour, and only has an effect while `curve_preroll_seconds` is non-zero. Carried over unchanged in behaviour; the option is now read in `detector_config.build_detector_config`, the single builder 0.5.8 uses for startup, reload and replay, and stays listed in the parity test ([#451](https://github.com/3dg1luk43/ha_washdata/issues/451)).
+
+### Dropped
+
+- **Prefix-guard refutation** (since `0.5.5.5`): four live short runs on the KD dishwasher (31.08., 01.09., 04.10., 06.10.) never hit the prefix guard at all, so the refutation never had anything to open. Not carried forward.
+- **Dishwasher drying phase longer than 30 min** (`0.5.7.2`): superseded by upstream `0.5.8`, which raises `TERMINAL_QUIET_CAP_S` to 7200 s (register item 469) and keeps [#424](https://github.com/3dg1luk43/ha_washdata/issues/424)'s mid-programme pause out by asking `terminal_quiet_seen` at the level the span was measured at.
+
 ## 0.5.8 - trimming the fat - 2026-10-08
 
 ### TL;DR
