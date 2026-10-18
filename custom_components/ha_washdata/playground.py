@@ -562,12 +562,14 @@ class _SimStore:
         duration: float,
         in_progress: bool = False,
         stop_threshold_w: float | None = None,
+        quiet_ceiling_w: float | None = None,
     ) -> MatchResult:
         """``ProfileStore.async_match_profile`` on this view, run to completion."""
         return _run_inline(
             ProfileStore.async_match_profile(
                 self, readings, duration,  # type: ignore[arg-type]
                 in_progress=in_progress, stop_threshold_w=stop_threshold_w,
+                quiet_ceiling_w=quiet_ceiling_w,
             )
         )
 
@@ -1052,8 +1054,14 @@ class _DetailSim:
         det = self.detector
         current_duration = (det_readings[-1][0] - det_readings[0][0]).total_seconds()
         stop_w = float(det.config.stop_threshold_w)
+        quiet_w = (
+            float(det.config.anti_wrinkle_max_power)
+            if det.config.anti_wrinkle_enabled
+            else None
+        )
         result = self.view.match(
-            det_readings, current_duration, in_progress=True, stop_threshold_w=stop_w
+            det_readings, current_duration, in_progress=True, stop_threshold_w=stop_w,
+            quiet_ceiling_w=quiet_w,
         )
         self._last_result = result
 

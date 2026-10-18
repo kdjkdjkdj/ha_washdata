@@ -793,6 +793,20 @@ SMART_TERM_LANDSCAPE_MIN_SHAPE = 0.40  # minimum shape score (pre-Stage-4) to qu
 # harness, which OR-ed both terms.)
 SMART_TERM_PREFIX_MIN_PAUSE_S = 60.0
 
+# (d) Quiet evidence, on the same #288 term (fork 0.5.8.2). The term asks whether
+# the trace may still be the start of a longer programme. Once the trace has been
+# quiet below `anti_wrinkle_max_power` for longer than a longer candidate EVER was
+# mid-cycle (a quiet power later resumed from, x this margin), it cannot be that
+# programme any more: it is the short programme's anti-crease tail. Without this
+# the flag stays set for the whole tail of a short programme that shares its start
+# with a longer one, the anti-crease finalize and the match freeze never engage,
+# the live match drifts to the longer profile and the cycle waits for 80 % of it.
+# Measured on a washer (Kurz 29.7 min vs AutomatikPlus 98 min, ceiling 50 W): the
+# longest mid-cycle quiet of AutomatikPlus is 10.4 min across 36 traced runs, the
+# tumble tail after Kurz ran 52 min. Read only where `quiet_ceiling_w` is passed,
+# i.e. with anti-wrinkle enabled; never below SMART_TERM_PREFIX_MIN_PAUSE_S.
+SMART_TERM_PREFIX_QUIET_MARGIN = 1.25
+
 # (b) Power plausibility (fixes 1, the untrained case, which no candidate-pool guard
 # can reach).  Both Smart-Termination paths key on `elapsed >= 0.98 * expected` and
 # neither checks whether the appliance is still WORKING, so a mis-matched shorter
