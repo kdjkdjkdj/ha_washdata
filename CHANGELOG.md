@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Releases 0.5.4 and earlier are in [CHANGELOG-archive.md](CHANGELOG-archive.md).
 
+## 0.5.8.2 - 2026-10-18
+
+Fork build on top of `0.5.8.1`. One new theme.
+
+Pretest for: not yet reported upstream (related: [#474](https://github.com/3dg1luk43/ha_washdata/issues/474), [#296](https://github.com/3dg1luk43/ha_washdata/issues/296))
+
+### Fixes
+
+- **A short programme's anti-crease tail can finalize again when a longer programme shares its start.** The #288 prefix term (`is_prefix_ambiguous_full_shape`, read only by the anti-crease finalize) stayed set for the whole tumble tail of a short programme whose start looks like a longer one. With the flag set the anti-crease gate never opens, so neither the finalize nor the match freeze engages; the live match then drifts to the longer profile on the growing flat tail and the cycle waits for 80 % of that profile. Measured on a washer with `anti_wrinkle_enabled` (Kurz 29.7 min, AutomatikPlus 98 min, ceiling 50 W): the programme ended at minute 22, the tail ran 52 min, the finish was reported at minute 79. The term now also asks how long the trace has been quiet below `anti_wrinkle_max_power`: a longer candidate whose programme never stayed that quiet mid-cycle (longest quiet it resumed from, `ProfileStore.profile_longest_resumed_quiet`, x `SMART_TERM_PREFIX_QUIET_MARGIN` = 1.25, never below `SMART_TERM_PREFIX_MIN_PAUSE_S`) no longer counts - same pattern as the #424 pause evidence. Passed only with anti-wrinkle enabled (`quiet_ceiling_w` on `async_match_profile`, live and Playground). Replay of that washer: the tail run now finalizes at minute 40 as Kurz (smart); across 30 traced runs since July nothing else changes against anti-wrinkle without the fix.
+
 ## 0.5.8.1 - 2026-10-10
 
 Fork build on top of upstream `0.5.8`. One fork theme left; the other two `0.5.7.2` themes are dropped.
