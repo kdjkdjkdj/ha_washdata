@@ -1250,6 +1250,13 @@ class WashDataManager:
                  # Lets the #288 prefix term ignore longer programmes that never
                  # pause below this threshold, so cannot explain a quiet (#424).
                  stop_threshold_w=float(self.detector.config.stop_threshold_w),
+                 # Fork 0.5.8.2: and longer programmes never this quiet mid-cycle,
+                 # so a short programme's anti-crease tail can finalize.
+                 quiet_ceiling_w=(
+                     float(self.detector.config.anti_wrinkle_max_power)
+                     if self.detector.config.anti_wrinkle_enabled
+                     else None
+                 ),
             )
 
             if not self._match_still_current(identity):

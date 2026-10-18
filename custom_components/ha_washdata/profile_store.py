@@ -78,6 +78,7 @@ from .const import (
     MATCH_LABEL_MIN_MARGIN,
     CONF_PROFILE_MIN_WARMUP_CYCLES,
     SMART_TERM_PREFIX_MIN_PAUSE_S,
+    SMART_TERM_PREFIX_QUIET_MARGIN,
     SMART_TERM_TAIL_WINDOW_FRAC,
     STORAGE_KEY,
     STORAGE_VERSION,
@@ -103,6 +104,7 @@ from .signal_processing import (
     integrate_wh,
     energy_gap_threshold_s,
     has_resumed_pause as _has_resumed_pause,
+    longest_resumed_pause_s as _longest_resumed_pause_s,
     resumed_pauses as _resumed_pauses,
     terminal_event_end as _terminal_event_end,
     terminal_quiet_seen as _terminal_quiet_seen,
@@ -1450,6 +1452,8 @@ def _match_prefix_ambiguity(
     candidates: list[dict],
     best_duration: float,
     pauses_below: Callable[[str], bool | None] | None = None,
+    current_quiet_s: float | None = None,
+    longest_quiet: Callable[[str], float | None] | None = None,
 ) -> bool:
     """The #288 prefix-landscape term: ``MatchResult.is_prefix_ambiguous_full_shape``.
 
@@ -1472,6 +1476,14 @@ def _match_prefix_ambiguity(
     its ``__group__`` key, which owns no cycles, so it always reads as no
     evidence and keeps the guard: deliberately, since any one sibling pausing
     would have to keep it anyway.
+
+    ``current_quiet_s`` / ``longest_quiet`` (fork 0.5.8.2): how long the trace has
+    now been quiet below the anti-wrinkle ceiling, and a callable mapping a
+    candidate name to the longest quiet below that ceiling its programme ever
+    resumed from mid-cycle (``ProfileStore.profile_longest_resumed_quiet``). A
+    candidate the current quiet outlasts by ``SMART_TERM_PREFIX_QUIET_MARGIN``
+    (and at least ``SMART_TERM_PREFIX_MIN_PAUSE_S``) cannot be the programme still
+    running, so it does not count. ``None`` from the callable keeps the guard.
     """
     if best_duration <= 0 or len(candidates) < 2:
         return False
@@ -1489,6 +1501,15 @@ def _match_prefix_ambiguity(
             except Exception:  # noqa: BLE001 - no opinion, keep the guard
                 paused = None
             if paused is False:
+                continue
+        if current_quiet_s is not None and current_quiet_s > 0 and longest_quiet is not None:
+            try:
+                quiet_max = longest_quiet(str(cand.get("name") or ""))
+            except Exception:  # noqa: BLE001 - no opinion, keep the guard
+                quiet_max = None
+            if quiet_max is not None and current_quiet_s > max(
+                quiet_max * SMART_TERM_PREFIX_QUIET_MARGIN, SMART_TERM_PREFIX_MIN_PAUSE_S
+            ):
                 continue
         return True
     return False
@@ -7169,6 +7190,49 @@ class ProfileStore:
         except Exception:  # noqa: BLE001 - a statistic must never break matching
             return None
 
+    def profile_longest_resumed_quiet(
+        self, profile_name: str, ceiling_w: float
+    ) -> float | None:
+        """Longest mid-cycle quiet below ``ceiling_w`` this programme resumed from.
+
+        Fork 0.5.8.2, read by the #288 prefix term through ``current_quiet_s``: a
+        longer programme that never stayed this quiet mid-cycle cannot be the one
+        a longer quiet belongs to. Timed like ``profile_pauses_below`` (a quiet
+        still open at the end of a trace is that cycle's own end or anti-crease
+        tail, not mid-cycle; a quiet on the first sample is pre-roll standby).
+        None when there is no traced evidence. Cached on the evidence fingerprint
+        and the ceiling. Never raises.
+        """
+        try:
+            ceiling = float(ceiling_w)
+            if not math.isfinite(ceiling) or ceiling <= 0:
+                return None
+            cache = getattr(self, "_quiet_cache", None)
+            if cache is None:
+                cache = self._quiet_cache = {}
+            key = (profile_name, round(ceiling, 4))
+            fingerprint = self._terminal_quiet_fingerprint(profile_name)
+            hit = cache.get(key)
+            if hit is not None and hit[0] == fingerprint:
+                return hit[1]
+            traced = 0
+            longest = 0.0
+            for cycle in self.iter_evidence_cycles():
+                if cycle.get("profile_name") != profile_name or not cycle.get("power_data"):
+                    continue
+                points = decompress_power_data(cast(Any, cycle))
+                if len(points) < 2:
+                    continue
+                traced += 1
+                longest = max(
+                    longest, _longest_resumed_pause_s(points, ceiling, skip_leading=True)
+                )
+            value: float | None = longest if traced else None
+            cache[key] = (fingerprint, value)
+            return value
+        except Exception:  # noqa: BLE001 - a statistic must never break matching
+            return None
+
     def profile_pause_catalogue(
         self, profile_name: str, stop_threshold_w: float
     ) -> tuple[int, tuple[tuple[float, float], ...]] | None:
@@ -8548,6 +8612,7 @@ class ProfileStore:
         current_duration: float,
         in_progress: bool = False,
         stop_threshold_w: float | None = None,
+        quiet_ceiling_w: float | None = None,
     ) -> MatchResult:
         """Run profile matching asynchronously in executor.
 
@@ -8560,6 +8625,11 @@ class ProfileStore:
         ``stop_threshold_w`` lets the prefix-landscape guard drop longer candidates
         that have never paused below it (#424, ``profile_pauses_below``). Omitted,
         the guard behaves as before.
+
+        ``quiet_ceiling_w`` (fork 0.5.8.2, the anti-wrinkle ceiling) lets the same
+        guard drop longer candidates whose programme was never quiet below it for
+        as long as the trace is now (``profile_longest_resumed_quiet``). Omitted,
+        the guard behaves as before.
         """
         # 1. Prepare data in main thread (Access ProfileStore state safely)
         group_members: dict[str, list[str]] = {}
@@ -8570,6 +8640,7 @@ class ProfileStore:
             return MatchResult(None, 0.0, 0.0, None, [], False, 0.0)
 
         # Pre-process current data
+        current_quiet_s: float | None = None
         try:
             # Normalize input format
             first_elem = current_power_data[0][0]
@@ -8591,6 +8662,17 @@ class ProfileStore:
                 )
 
             p_arr = np.array([float(x[1]) for x in current_power_data])
+
+            # Fork 0.5.8.2: the trailing quiet below the anti-wrinkle ceiling, timed
+            # from its first sample to the newest one (see _match_prefix_ambiguity).
+            if quiet_ceiling_w is not None and float(quiet_ceiling_w) > 0 and len(p_arr):
+                below = p_arr < float(quiet_ceiling_w)
+                if bool(below[-1]):
+                    idx = len(below) - 1
+                    while idx > 0 and bool(below[idx - 1]):
+                        idx -= 1
+                    if idx > 0:  # quiet since the first sample is pre-roll standby
+                        current_quiet_s = float(ts_arr[-1] - ts_arr[idx])
 
             # Resample current
             segments, used_dt = resample_adaptive(ts_arr, p_arr, min_dt=5.0, gap_s=21600.0)
@@ -8777,8 +8859,13 @@ class ProfileStore:
             pauses_fn = functools.partial(
                 self.profile_pauses_below, stop_threshold_w=float(stop_threshold_w)
             )
+        quiet_fn: Callable[[str], float | None] | None = None
+        if quiet_ceiling_w is not None and current_quiet_s:
+            quiet_fn = functools.partial(
+                self.profile_longest_resumed_quiet, ceiling_w=float(quiet_ceiling_w)
+            )
         full_shape_hit = _match_prefix_ambiguity(
-            candidates, best_duration or 0.0, pauses_fn
+            candidates, best_duration or 0.0, pauses_fn, current_quiet_s, quiet_fn
         )
         # From the pre-collapse population, not just before the [:5] truncation
         # below: see `pre_collapse_candidates` above for why the collapse is the
