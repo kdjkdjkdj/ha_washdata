@@ -313,6 +313,12 @@ def test_matcher_runs_the_live_coroutine():
     assert spy.call_args[1] == {
         "in_progress": True,
         "stop_threshold_w": float(sim.detector.config.stop_threshold_w),
+        # Fork 0.5.8.2: the live call passes the anti-wrinkle ceiling too.
+        "quiet_ceiling_w": (
+            float(sim.detector.config.anti_wrinkle_max_power)
+            if sim.detector.config.anti_wrinkle_enabled
+            else None
+        ),
     }
 
 
