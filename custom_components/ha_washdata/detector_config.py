@@ -43,6 +43,7 @@ from .const import (
     CONF_COMPLETION_MIN_SECONDS,
     CONF_CURVE_PREROLL_SECONDS,
     CONF_CURVE_PREROLL_THRESHOLD_W,
+    CONF_ANTI_CREASE_SETTLE_POWER_W,
     CONF_DELAY_CONFIRM_SECONDS,
     CONF_DELAY_START_DETECT_ENABLED,
     CONF_DELAY_TIMEOUT_HOURS,
@@ -73,6 +74,7 @@ from .const import (
     DEFAULT_COMPLETION_MIN_SECONDS,
     DEFAULT_CURVE_PREROLL_SECONDS,
     DEFAULT_CURVE_PREROLL_THRESHOLD_W,
+    DEFAULT_ANTI_CREASE_SETTLE_POWER_W,
     DEFAULT_DELAY_CONFIRM_SECONDS,
     DEFAULT_DELAY_START_DETECT_ENABLED,
     DEFAULT_DELAY_TIMEOUT_HOURS,
@@ -249,6 +251,10 @@ def build_detector_config(
         # Pre-roll anchor level; 0 falls back to start_threshold_w.
         curve_preroll_threshold_w=float(
             opt(CONF_CURVE_PREROLL_THRESHOLD_W, DEFAULT_CURVE_PREROLL_THRESHOLD_W)
+        ),
+        # Anti-crease confirm-window ceiling; 0 keeps anti_wrinkle_max_power.
+        anti_crease_settle_power_w=float(
+            opt(CONF_ANTI_CREASE_SETTLE_POWER_W, DEFAULT_ANTI_CREASE_SETTLE_POWER_W)
         ),
         delay_detect_enabled=bool(
             opt(CONF_DELAY_START_DETECT_ENABLED, DEFAULT_DELAY_START_DETECT_ENABLED)

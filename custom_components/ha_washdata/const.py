@@ -117,6 +117,7 @@ CONF_DISHWASHER_END_SPIKE_QUIET_RELEASE = "dishwasher_end_spike_quiet_release"  
 CONF_SMART_TERMINATION_DURATION_RATIO = "smart_termination_duration_ratio"  # Fraction of the matched profile's expected (mean) duration that Smart Termination requires before it may fire (#393)
 CONF_ANTI_CREASE_FINALIZE_RATIO = "anti_crease_finalize_ratio"  # Fraction of the matched profile's expected (mean) duration the anti-crease finalise requires before it may fire (#429)
 CONF_CURVE_PREROLL_SECONDS = "curve_preroll_seconds"  # How far back readings from aborted start probes may be carried into a committed cycle's curve; 0 = off (#430)
+CONF_ANTI_CREASE_SETTLE_POWER_W = "anti_crease_settle_power_w"  # Ceiling of the anti-crease confirm window; 0 = anti_wrinkle_max_power
 CONF_CURVE_PREROLL_THRESHOLD_W = "curve_preroll_threshold_w"  # Power level the pre-roll anchors on; 0 = use start_threshold_w
 CONF_DELAY_START_DETECT_ENABLED = "delay_start_detect_enabled"  # Enable delayed-start detection
 CONF_DELAY_CONFIRM_SECONDS = "delay_confirm_seconds"  # Seconds power must stay in standby band before DELAY_WAIT engages
@@ -431,6 +432,7 @@ PREROLL_CHAIN_BREAK_SECONDS = 90.0
 # anchor there would back-date the cycle start into idle time (the samples
 # themselves would be dropped from the curve by trim_zero_readings anyway, so
 # the start time is the part that would actually be wrong).
+DEFAULT_ANTI_CREASE_SETTLE_POWER_W = 0.0  # W - 0 = the window uses anti_wrinkle_max_power
 DEFAULT_CURVE_PREROLL_THRESHOLD_W = 0.0  # W - 0 = fall back to start_threshold_w
 
 # Matching & Termination Stability
@@ -1260,6 +1262,11 @@ ANTI_CREASE_TERMINAL_MATCH_FRAC = 0.5       # live high-power seconds after that
                                             # position, as a fraction of the
                                             # profile's own block, that count as
                                             # "this run has had its spin"
+# Fork 0.5.8.4: never hold the finalise for `anti_crease_settle_power_w` past this
+# x expected. A machine whose tumble never pauses below the settle level would
+# otherwise hang in RUNNING (the #296 shape); past the cap the window falls back to
+# anti_wrinkle_max_power.
+ANTI_CREASE_SETTLE_WAIT_MAX_RATIO = 1.25
 ANTI_CREASE_SPIN_WAIT_MAX_RATIO = 1.25      # never block past this x expected
 # Register item 480: the envelope's max band arms the guard when ANY member's last
 # block above the level is terminal, and washer spins straddle 400 W (held runs
