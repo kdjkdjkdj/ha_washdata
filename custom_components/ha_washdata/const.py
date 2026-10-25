@@ -807,6 +807,28 @@ SMART_TERM_PREFIX_MIN_PAUSE_S = 60.0
 # i.e. with anti-wrinkle enabled; never below SMART_TERM_PREFIX_MIN_PAUSE_S.
 SMART_TERM_PREFIX_QUIET_MARGIN = 1.25
 
+# (e) The same quiet evidence against ANY live candidate, the leader included (fork
+# 0.5.8.3). (d) only drops a longer RUNNER-UP from the #288 term; once the longer
+# programme itself leads the live match, nothing checks it. Measured on the same
+# washer: an AutomatikPlus run (activity over at minute 77) led as 'Lang' (182 min)
+# from minute 31 through its whole tumble tail, so the anti-crease gate waited for
+# 98 % of 182 min, and the next load, started 22 min after the spin, would have been
+# merged into the same cycle; in replay 6 of 18 AutomatikPlus runs since July ended
+# as 'Lang'. A live candidate is dropped from the ranking when both hold:
+#   - the trailing quiet below `anti_wrinkle_max_power` outlasts the candidate's
+#     longest resumed mid-cycle quiet x SMART_TERM_PREFIX_QUIET_MARGIN, and is at
+#     least SMART_TERM_QUIET_REFUTE_MIN_S;
+#   - the activity stopped (elapsed - quiet) before SMART_TERM_QUIET_REFUTE_END_RATIO
+#     x the earliest that programme's activity ever stopped. Keyed on the activity
+#     end, not on the profile duration: stored durations carry the tumble tail
+#     (Lang: 144-183 min stored, activity over at minute 112-152).
+# The 5 min floor sits above every resumed mid-cycle quiet of the genuine long runs
+# (max 3.4 min over 3 runs); a refuted leader in the middle of a wash is the abort
+# this must never cause. Never empties the ranking; live matching only (the
+# cycle-end match sees the complete trace).
+SMART_TERM_QUIET_REFUTE_MIN_S = 300.0
+SMART_TERM_QUIET_REFUTE_END_RATIO = 0.9
+
 # (b) Power plausibility (fixes 1, the untrained case, which no candidate-pool guard
 # can reach).  Both Smart-Termination paths key on `elapsed >= 0.98 * expected` and
 # neither checks whether the appliance is still WORKING, so a mis-matched shorter
