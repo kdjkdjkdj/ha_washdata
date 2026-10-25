@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Releases 0.5.4 and earlier are in [CHANGELOG-archive.md](CHANGELOG-archive.md).
 
+## 0.5.8.3 - 2026-10-25
+
+Fork build on top of `0.5.8.2`. One new theme.
+
+Pretest for: not yet reported upstream (related: [#288](https://github.com/3dg1luk43/ha_washdata/issues/288), [#296](https://github.com/3dg1luk43/ha_washdata/issues/296))
+
+### Fixes
+
+- **The quiet evidence now rules out the leading live candidate too.** `0.5.8.2` taught the #288 prefix term to drop a longer *runner-up* once the trailing quiet below `anti_wrinkle_max_power` outlasts anything that programme ever resumed from mid-cycle. When the longer programme itself *leads* the live match, nothing checked it: measured on a washer with `anti_wrinkle_enabled` (AutomatikPlus 97.5 min, Lang 182 min, ceiling 50 W), an AutomatikPlus run whose activity stopped at minute 77 was shown as Lang from minute 31 through its whole tumble tail, the anti-crease gate waited for 98 % of 182 min, and the next load, started 22 min after the spin, was merged into the same cycle. In replay 6 of 18 AutomatikPlus runs since July ended as Lang. A live candidate is now dropped from the ranking (`_quiet_refutes`) when the trailing quiet both outlasts its longest resumed mid-cycle quiet x `SMART_TERM_PREFIX_QUIET_MARGIN` (at least `SMART_TERM_QUIET_REFUTE_MIN_S` = 300 s) and the activity stopped (elapsed - quiet) before `SMART_TERM_QUIET_REFUTE_END_RATIO` = 0.9 x the earliest that programme's activity ever stopped (`ProfileStore.profile_earliest_activity_end`, the last sample at or above the ceiling per traced cycle, so the tumble tail a stored duration carries does not count). Live matching only, only with anti-wrinkle enabled, never empties the ranking. Replay: that run finalizes at 12:05 as AutomatikPlus (smart) and the next load is its own cycle; washer AutomatikPlus runs ending as Lang 6 -> 1 (with one merged double run taken out of Lang), the three genuine Lang runs unchanged; dryer (anti-wrinkle on, 35 runs) unchanged.
+
 ## 0.5.8.2 - 2026-10-18
 
 Fork build on top of `0.5.8.1`. One new theme.

@@ -79,6 +79,8 @@ from .const import (
     CONF_PROFILE_MIN_WARMUP_CYCLES,
     SMART_TERM_PREFIX_MIN_PAUSE_S,
     SMART_TERM_PREFIX_QUIET_MARGIN,
+    SMART_TERM_QUIET_REFUTE_END_RATIO,
+    SMART_TERM_QUIET_REFUTE_MIN_S,
     SMART_TERM_TAIL_WINDOW_FRAC,
     STORAGE_KEY,
     STORAGE_VERSION,
@@ -1513,6 +1515,38 @@ def _match_prefix_ambiguity(
                 continue
         return True
     return False
+
+
+def _quiet_refutes(
+    cand: dict,
+    elapsed_s: float,
+    current_quiet_s: float | None,
+    longest_quiet: Callable[[str], float | None],
+    earliest_end: Callable[[str], float | None],
+) -> bool:
+    """Fork 0.5.8.3: has the trailing quiet ruled this live candidate out?
+
+    True when the trace has been quiet below the anti-wrinkle ceiling for longer
+    than the candidate's programme ever was mid-cycle (``longest_quiet`` x
+    ``SMART_TERM_PREFIX_QUIET_MARGIN``, at least ``SMART_TERM_QUIET_REFUTE_MIN_S``)
+    AND the activity stopped (``elapsed_s - current_quiet_s``) before
+    ``SMART_TERM_QUIET_REFUTE_END_RATIO`` x the earliest that programme's activity
+    ever stopped (``earliest_end``). No evidence (``None``) or a failing statistic
+    keeps the candidate. Pure function, no I/O.
+    """
+    if not current_quiet_s or current_quiet_s < SMART_TERM_QUIET_REFUTE_MIN_S:
+        return False
+    name = str(cand.get("name") or "")
+    try:
+        quiet_max = longest_quiet(name)
+        end_min = earliest_end(name)
+    except Exception:  # noqa: BLE001 - no opinion, keep the candidate
+        return False
+    if quiet_max is None or end_min is None or end_min <= 0:
+        return False
+    if current_quiet_s <= quiet_max * SMART_TERM_PREFIX_QUIET_MARGIN:
+        return False
+    return (float(elapsed_s) - current_quiet_s) < end_min * SMART_TERM_QUIET_REFUTE_END_RATIO
 
 
 # ── Selective export/import taxonomy ────────────────────────────────────────────
@@ -7233,6 +7267,44 @@ class ProfileStore:
         except Exception:  # noqa: BLE001 - a statistic must never break matching
             return None
 
+    def profile_earliest_activity_end(
+        self, profile_name: str, ceiling_w: float
+    ) -> float | None:
+        """Earliest offset at which this programme's activity ever stopped.
+
+        Fork 0.5.8.3, read by ``_quiet_refutes``: per traced evidence cycle the
+        last sample at or above ``ceiling_w`` (the anti-wrinkle ceiling), so the
+        tumble tail a stored duration carries does not count; the minimum over the
+        cycles. None without traced evidence. Cached on the evidence fingerprint
+        and the ceiling. Never raises.
+        """
+        try:
+            ceiling = float(ceiling_w)
+            if not math.isfinite(ceiling) or ceiling <= 0:
+                return None
+            cache = getattr(self, "_activity_end_cache", None)
+            if cache is None:
+                cache = self._activity_end_cache = {}
+            key = (profile_name, round(ceiling, 4))
+            fingerprint = self._terminal_quiet_fingerprint(profile_name)
+            hit = cache.get(key)
+            if hit is not None and hit[0] == fingerprint:
+                return hit[1]
+            earliest: float | None = None
+            for cycle in self.iter_evidence_cycles():
+                if cycle.get("profile_name") != profile_name or not cycle.get("power_data"):
+                    continue
+                points = decompress_power_data(cast(Any, cycle))
+                active = [float(t) for t, p in points if float(p) >= ceiling]
+                if not active:
+                    continue
+                end = active[-1] - float(points[0][0])
+                earliest = end if earliest is None else min(earliest, end)
+            cache[key] = (fingerprint, earliest)
+            return earliest
+        except Exception:  # noqa: BLE001 - a statistic must never break matching
+            return None
+
     def profile_pause_catalogue(
         self, profile_name: str, stop_threshold_w: float
     ) -> tuple[int, tuple[tuple[float, float], ...]] | None:
@@ -8756,6 +8828,27 @@ class ProfileStore:
         # RAISE the bar, so this defers ends, never hastens them.
         pre_collapse_candidates = list(candidates)
         candidates = collapse_group_candidates(candidates, group_members)
+
+        # Fork 0.5.8.3: the quiet evidence of the #288 term, applied to every live
+        # candidate - the leader included. A programme never this quiet mid-cycle,
+        # whose activity never stopped this early, is not the one running
+        # (_quiet_refutes). Kept out of the cycle-end match; never empties the ranking.
+        if in_progress and current_quiet_s and quiet_ceiling_w is not None:
+            ceiling = float(quiet_ceiling_w)
+            quiet_of = functools.partial(self.profile_longest_resumed_quiet, ceiling_w=ceiling)
+            end_of = functools.partial(self.profile_earliest_activity_end, ceiling_w=ceiling)
+            elapsed = float(current_duration or 0.0)
+            kept = [
+                c for c in candidates
+                if not _quiet_refutes(c, elapsed, current_quiet_s, quiet_of, end_of)
+            ]
+            if kept and len(kept) < len(candidates):
+                self._logger.debug(
+                    "Quiet %.0fs below %.0fW (activity stopped at %.0fs) rules out %s",
+                    current_quiet_s, ceiling, elapsed - current_quiet_s,
+                    [c.get("name") for c in candidates if c not in kept],
+                )
+                candidates = kept
 
         best = candidates[0]
 
