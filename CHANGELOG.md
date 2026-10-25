@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Releases 0.5.4 and earlier are in [CHANGELOG-archive.md](CHANGELOG-archive.md).
 
+## 0.5.8.4 - 2026-10-25
+
+Fork build on top of `0.5.8.3`. One new option.
+
+Pretest for: not yet reported upstream (related: [#296](https://github.com/3dg1luk43/ha_washdata/issues/296), [#429](https://github.com/3dg1luk43/ha_washdata/issues/429))
+
+### Features
+
+- **The anti-crease finalise can wait for the first rest** (`anti_crease_settle_power_w`): The confirm window of the finalise into anti-wrinkle (`ANTI_CREASE_CONFIRM_WINDOW_S`, 180 s) accepted any reading at or below `anti_wrinkle_max_power`. On a dryer the cool-down drum (150-230 W, 9-12 min without a pause) and the later anti-crease tumbles (155-280 W) come from the same motor, so no single ceiling separates them, and the finalise fired a few minutes into the cool-down while the machine still counted down. Measured on that dryer (anti-wrinkle on, ceiling 400 W, `anti_crease_finalize_ratio` 0.75): finished 3-8 min after the last heating, the cool-down ran to about 10-12 min. What separates the two is the pause: the anti-crease tail rests near standby between tumbles, the cool-down never does. The new option sets a lower ceiling for the confirm window only; `anti_wrinkle_max_power` keeps classifying the tumbles. Bounded by `ANTI_CREASE_SETTLE_WAIT_MAX_RATIO` = 1.25 x expected, past which the window falls back to `anti_wrinkle_max_power`, so a tumble that never pauses cannot hang the cycle. Default 0 = unchanged. Replay with the full recorder tail (5 runs, 100 W): three finishes move from inside the cool-down (+3.2 / +4.9 / +8.3 min after the last heating) to after it (+10.3 / +14.5 / +15.0), one is unchanged (+17.0 -> +18.0), one gets later (+22.9 -> +31.5, rests after the gate opened were 2.6 min); 80-130 W give identical results. On 37 stored runs no new split; five runs previously recorded as two cycles become one.
+
 ## 0.5.8.3 - 2026-10-25
 
 Fork build on top of `0.5.8.2`. One new theme.

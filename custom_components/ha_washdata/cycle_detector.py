@@ -95,6 +95,8 @@ from .const import (
     ANTI_CREASE_FINALIZE_RATIO_MAX,
     DEFAULT_CURVE_PREROLL_SECONDS,
     DEFAULT_CURVE_PREROLL_THRESHOLD_W,
+    DEFAULT_ANTI_CREASE_SETTLE_POWER_W,
+    ANTI_CREASE_SETTLE_WAIT_MAX_RATIO,
     CURVE_PREROLL_MAX_SECONDS,
     PREROLL_CHAIN_BREAK_SECONDS,
     ANTI_CREASE_CONFIRM_WINDOW_S,
@@ -453,6 +455,10 @@ class CycleDetectorConfig:
     # Level the pre-roll anchors on. 0 falls back to start_threshold_w, which is
     # what the mechanism does with a single level, so the default is a no-op.
     curve_preroll_threshold_w: float = DEFAULT_CURVE_PREROLL_THRESHOLD_W
+    # Fork 0.5.8.4: ceiling of the anti-crease finalise's confirm window, below
+    # anti_wrinkle_max_power. 0 keeps anti_wrinkle_max_power, so the default is a
+    # no-op; see _is_anticrease_tail.
+    anti_crease_settle_power_w: float = DEFAULT_ANTI_CREASE_SETTLE_POWER_W
     delay_detect_enabled: bool = False
     # Sustained seconds power must stay in the standby band (between
     # stop_threshold_w and start_threshold_w) before DELAY_WAIT engages.
@@ -4695,6 +4701,21 @@ class CycleDetector:
             return False
         if max(window) > max_power:
             return False  # a heating / high-spin reading in the window - still washing
+        # Fork 0.5.8.4: a dryer's cool-down drum (150-230 W, minutes without a
+        # pause) sits under anti_wrinkle_max_power exactly like its later tumble
+        # bursts - same motor - so no single ceiling separates the two. What does is
+        # the pause: the anti-crease tail rests near standby between bursts, the
+        # cool-down never does. A settle level below the drum makes the window wait
+        # for the first such rest. Bounded by ANTI_CREASE_SETTLE_WAIT_MAX_RATIO so
+        # a tumble that never pauses cannot hang the cycle.
+        settle = float(self._config.anti_crease_settle_power_w or 0.0)
+        if (
+            0.0 < settle < max_power
+            and max(window) > settle
+            and self._gate_elapsed_s(timestamp)
+            < self._expected_duration * ANTI_CREASE_SETTLE_WAIT_MAX_RATIO
+        ):
+            return False
         return True
 
     def _anticrease_spin_pending(self, timestamp: datetime) -> bool:
