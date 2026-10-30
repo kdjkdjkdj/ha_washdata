@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Releases 0.5.4 and earlier are in [CHANGELOG-archive.md](CHANGELOG-archive.md).
 
+## 0.5.9.1.1 - 2026-10-30
+
+Fork build on top of upstream `0.5.9.1`. All four fork themes of `0.5.8.4` carried over unchanged; none is superseded by `0.5.9`.
+
+Pretest for: not yet reported upstream (related: [#288](https://github.com/3dg1luk43/ha_washdata/issues/288), [#296](https://github.com/3dg1luk43/ha_washdata/issues/296), [#429](https://github.com/3dg1luk43/ha_washdata/issues/429))
+
+### Carried over
+
+- **Curve pre-roll anchor level** (`curve_preroll_threshold_w`, since `0.5.8.1`).
+- **Quiet evidence lets a short programme's anti-crease tail finalize** (`quiet_ceiling_w` on the #288 prefix term, `0.5.8.2`).
+- **Quiet evidence rules out the leading live candidate** (`_quiet_refutes`, `0.5.8.3`).
+- **The anti-crease finalise can wait for the first rest** (`anti_crease_settle_power_w`, `0.5.8.4`).
+
+Both fork options survive the `3.11 -> 3.12` entry step: it strips `RETIRED_OPTION_KEYS` only, and neither key is on that list.
+
+### Why none is dropped
+
+[#474](https://github.com/3dg1luk43/ha_washdata/issues/474) in `0.5.9` keeps dryer pulses of up to `QUIET_PULSE_MAX_S` (30 s) from restarting the quiet time. The fork themes sit elsewhere: the washer's live matching (`0.5.8.2`/`0.5.8.3`) and a dryer cool-down that runs for minutes without a pause (`0.5.8.4`). Replay of all stored runs of six appliances (two washers, two dryers, two dishwashers; 218 runs) with their live options:
+
+- `0.5.8.4` against this build: 217 identical, one dryer run ends 5 min earlier because a single tumble pulse after the programme no longer counts as activity (the #474 fix working as intended).
+- Plain `0.5.9.1` against this build: the washer with anti-wrinkle on falls back to `Lang` or a forced stop in 22 of 51 runs, the dryer with `anti_crease_settle_power_w` finalizes inside the cool-down in 25 of 39 (six of them split in two), and the pre-roll heads are lost again (dishwashers 3 min, dryer 1 min).
+
+Tests: 4169 passed.
+
 ## 0.5.9.1 - 2026-10-29
 
 ### TL;DR
