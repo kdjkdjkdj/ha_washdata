@@ -10898,15 +10898,17 @@ class ProfileStore:
         # candidate - the leader included. A programme never this quiet mid-cycle,
         # whose activity never stopped this early, is not the one running
         # (_quiet_refutes). Kept out of the cycle-end match; never empties the ranking.
+        refuted: Callable[[dict], bool] | None = None
         if in_progress and current_quiet_s and quiet_ceiling_w is not None:
             ceiling = float(quiet_ceiling_w)
             quiet_of = functools.partial(self.profile_longest_resumed_quiet, ceiling_w=ceiling)
             end_of = functools.partial(self.profile_earliest_activity_end, ceiling_w=ceiling)
             elapsed = float(current_duration or 0.0)
-            kept = [
-                c for c in candidates
-                if not _quiet_refutes(c, elapsed, current_quiet_s, quiet_of, end_of)
-            ]
+
+            def refuted(c: dict) -> bool:
+                return _quiet_refutes(c, elapsed, current_quiet_s, quiet_of, end_of)
+
+            kept = [c for c in candidates if not refuted(c)]
             if kept and len(kept) < len(candidates):
                 self._logger.debug(
                     "Quiet %.0fs below %.0fW (activity stopped at %.0fs) rules out %s",
@@ -10929,6 +10931,13 @@ class ProfileStore:
             _single_template_view(pre_collapse_candidates, group_members)
             if in_progress else None
         )
+        # Fork 0.6.0.1: the end gates read this ranking (#486), built from the
+        # population before the 0.5.8.3 filter above - apply it here too, or a
+        # refuted longer programme stays the gates' leader. Never empties it.
+        if single_view and refuted is not None:
+            gate_kept = [c for c in single_view if not refuted(c)]
+            if gate_kept and len(gate_kept) < len(single_view):
+                single_view = gate_kept
 
         best_name = best["name"]
         best_duration = best["profile_duration"]
