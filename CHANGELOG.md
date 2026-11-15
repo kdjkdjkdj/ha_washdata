@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Releases 0.5.4 and earlier are in [CHANGELOG-archive.md](CHANGELOG-archive.md).
 
+## 0.6.0.1 - 2026-11-15
+
+Fork build on top of upstream `0.6.0`. Three of the four fork themes of `0.5.9.1.1` carried over; one dropped as superseded by `0.6.0`.
+
+Pretest for: not yet reported upstream (related: [#288](https://github.com/3dg1luk43/ha_washdata/issues/288), [#486](https://github.com/3dg1luk43/ha_washdata/issues/486))
+
+### Carried over
+
+- **Curve pre-roll anchor level** (`curve_preroll_threshold_w`, since `0.5.8.1`).
+- **Quiet evidence lets a short programme's anti-crease tail finalize** (`quiet_ceiling_w` on the #288 prefix term, `0.5.8.2`), now also on the #486 gate ranking.
+- **Quiet evidence rules out the leading live candidate** (`_quiet_refutes`, `0.5.8.3`), now also on the #486 gate ranking.
+
+### Dropped
+
+- **`anti_crease_settle_power_w`** (`0.5.8.4`): superseded by the upstream fix for [#514](https://github.com/3dg1luk43/ha_washdata/issues/514) in `0.6.0`. A stored value of the option stays in the entry and is no longer read.
+
+### Replay
+
+All stored runs of six appliances (232 runs) through upstream `0.6.0`, the earlier fork `0.5.9.1.1` and this build, with live options and the `0.6.0` upgrade replayed (store migration to v19, envelope rebuild, entry step 3.12 -> 3.13):
+
+- Washer with anti-wrinkle on (54 runs): plain `0.6.0` shows `Lang` live in 20 runs and force-stops 7 (Smart Termination 5); this build: `Lang` 5, no forced stop, Smart Termination 27 - as `0.5.9.1.1`.
+- Dryers: this build matches plain `0.6.0` (no splits; one dryer ends before its last activity in 1 of 25 runs instead of 10 under `0.5.9.1.1`).
+- Dishwashers and the other washer: unchanged against `0.5.9.1.1`.
+
 ## 0.6.0 - 2026-11-12
 
 ### TL;DR
